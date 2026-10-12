@@ -1,0 +1,33 @@
+{
+  "name": "multiplayer-game",
+  "version": "1.0.0",
+  "description": "Multiplayer browser game for learning the full web stack",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "test": "vitest run"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sathiarith/multiplayer-game.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/sathiarith/multiplayer-game/issues"
+  },
+  "homepage": "https://github.com/sathiarith/multiplayer-game#readme",
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.12.0",
+    "globals": "^17.13.0",
+    "prettier": "^3.9.10",
+    "vitest": "^5.0.3"
+  }
+}
