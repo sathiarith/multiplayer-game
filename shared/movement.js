@@ -1,3 +1,5 @@
+import { canMoveTo } from "./map.js";
+
 // Turn the set of held keys into a direction of length 0 or 1.
 export function getDirection(keys) {
   let x = 0;
@@ -19,4 +21,13 @@ export function step(player, dir, speed, dt) {
     x: player.x + dir.x * speed * dt,
     y: player.y + dir.y * speed * dt,
   };
+}
+
+// Move, but resolve each axis separately so the player slides along walls.
+export function moveWithCollision(player, dir, speed, dt, tiles, tileSize) {
+  const next = step(player, dir, speed, dt);
+  let { x, y } = player;
+  if (canMoveTo(tiles, tileSize, next.x, y, player.size)) x = next.x;
+  if (canMoveTo(tiles, tileSize, x, next.y, player.size)) y = next.y;
+  return { ...player, x, y };
 }
