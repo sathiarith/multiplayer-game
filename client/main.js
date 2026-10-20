@@ -1,5 +1,6 @@
 import { buildLevel } from "../shared/map.js";
 import { createPlayer, updatePlayer } from "../shared/game.js";
+import { createHud } from "./hud.js";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -50,6 +51,7 @@ async function main() {
   canvas.height = level.tiles.length * level.tileSize;
 
   let player = createPlayer(level);
+  const hud = createHud();
   let last = performance.now();
 
   function frame(now) {
@@ -57,6 +59,7 @@ async function main() {
     last = now;
     player = updatePlayer(player, keys, dt, level); // logic: shared/
     render(level, player); // drawing: client only
+    hud.update(player, level);
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
