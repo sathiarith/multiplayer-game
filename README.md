@@ -22,3 +22,8 @@ JavaScript, HTML/CSS, React, Node/Express, SQL, WebSockets, Redis, Docker, and C
 - `server/` API and game server
 - `shared/` game logic used by both
 - `docs/` decisions, API spec, and runbooks
+
+## Art assets
+
+The sprite sheets are not included. See [CREDITS.md](CREDITS.md) for where
+to download them and which files go in `client/assets/`.
