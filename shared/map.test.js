@@ -1,6 +1,7 @@
 import { test, expect } from "vitest";
 import { parseMap, isWall, canMoveTo } from "./map.js";
 import { moveWithCollision } from "./movement.js";
+import { buildLevel } from "./map.js";
 
 const T = 40;
 const tiles = parseMap(["####", "#..#", "#..#", "####"]);
@@ -50,4 +51,14 @@ test("player slides along a wall when moving diagonally", () => {
   );
   expect(p.x).toBe(108); // blocked horizontally
   expect(p.y).toBeGreaterThan(60); // still moved vertically
+});
+
+test("buildLevel converts raw data into a game map", () => {
+  const level = buildLevel({
+    tileSize: 40,
+    spawn: { col: 1, row: 1 },
+    rows: ["###", "#.#", "###"],
+  });
+  expect(level.tiles[1]).toEqual([1, 0, 1]);
+  expect(level.tileSize).toBe(40);
 });

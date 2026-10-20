@@ -26,3 +26,12 @@ export function canMoveTo(tiles, tileSize, x, y, size) {
   }
   return true;
 }
+
+// Raw level JSON in, game-ready map out. Pure: no fetch, no DOM.
+export function buildLevel(data) {
+  return {
+    tileSize: data.tileSize,
+    tiles: parseMap(data.rows),
+    spawn: data.spawn,
+  };
+}

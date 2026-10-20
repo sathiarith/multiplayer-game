@@ -22,3 +22,18 @@ test("step scales distance by speed and dt", () => {
   const p = step({ x: 0, y: 0 }, { x: 1, y: 0 }, 200, 0.5);
   expect(p.x).toBe(100);
 });
+
+test("all four direction keys cancel out", () => {
+  const keys = new Set(["KeyW", "KeyA", "KeyS", "KeyD"]);
+  expect(getDirection(keys)).toEqual({ x: 0, y: 0 });
+});
+
+test("step with dt of zero does not move", () => {
+  const p = step({ x: 10, y: 20 }, { x: 1, y: 0 }, 200, 0);
+  expect(p).toEqual({ x: 10, y: 20 });
+});
+
+test("step does not mutate the original player", () => {
+  const original = Object.freeze({ x: 0, y: 0 });
+  expect(() => step(original, { x: 1, y: 0 }, 200, 0.1)).not.toThrow();
+});
