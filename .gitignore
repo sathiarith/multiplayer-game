@@ -2,5 +2,6 @@ node_modules/
 .env
 dist/
 *.db
+server/data/
 # Third-party art: license forbids redistribution, see CREDITS.md
 client/assets/*.png
