@@ -2,7 +2,19 @@ import express from "express";
 import session from "express-session";
 import bcrypt from "bcryptjs";
 import { createUser, findUserByUsername, findUserById } from "./users.js";
-import { validateCredentials } from "./validation.js";
+import {
+  validateCredentials,
+  validateNewCharacter,
+  validatePosition,
+} from "./validation.js";
+import {
+  listCharacters,
+  createCharacter,
+  updatePosition,
+  CharacterLimitError,
+  MAX_CHARACTERS,
+  WORLD,
+} from "./characters.js";
 
 export const COOKIE_NAME = "sid";
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -130,6 +142,75 @@ export function createApp(
 
   app.get("/api/me", requireAuth, (req, res) => {
     res.json(req.user);
+  });
+
+  app.get("/api/characters", requireAuth, (req, res) => {
+    res.json(listCharacters(db, req.user.id));
+  });
+
+  app.post("/api/characters", requireAuth, (req, res) => {
+    const { name, class: characterClass } = req.body ?? {};
+
+    const errors = validateNewCharacter({ name, class: characterClass });
+    if (Object.keys(errors).length > 0) {
+      return res.status(400).json({
+        error: {
+          code: "invalid_input",
+          message: "Invalid input",
+          fields: errors,
+        },
+      });
+    }
+
+    try {
+      const character = createCharacter(db, req.user.id, name, characterClass);
+      return res.status(201).json(character);
+    } catch (err) {
+      if (err instanceof CharacterLimitError) {
+        return res.status(409).json({
+          error: {
+            code: "character_limit",
+            message: `You can have at most ${MAX_CHARACTERS} characters`,
+          },
+        });
+      }
+      if (err.code === "SQLITE_CONSTRAINT_UNIQUE") {
+        return res.status(409).json({
+          error: {
+            code: "name_taken",
+            message: "That character name is taken",
+          },
+        });
+      }
+      throw err;
+    }
+  });
+
+  // Temporary: Sprint 5 replaces client-reported positions with server-owned ones.
+  app.put("/api/characters/:id/position", requireAuth, (req, res) => {
+    const NOT_FOUND = {
+      error: { code: "not_found", message: "Character not found" },
+    };
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) return res.status(404).json(NOT_FOUND);
+
+    const { x, y } = req.body ?? {};
+    const errors = validatePosition({ x, y }, WORLD);
+    if (Object.keys(errors).length > 0) {
+      return res.status(400).json({
+        error: {
+          code: "invalid_input",
+          message: "Invalid input",
+          fields: errors,
+        },
+      });
+    }
+
+    // Same answer whether the character is missing or belongs to someone else.
+    if (!updatePosition(db, req.user.id, id, x, y)) {
+      return res.status(404).json(NOT_FOUND);
+    }
+    return res.json({ id, x, y });
   });
 
   return app;
