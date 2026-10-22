@@ -10,3 +10,7 @@ export function findUserByUsername(db, username) {
     .prepare("SELECT id, username, password_hash FROM users WHERE username = ?")
     .get(username);
 }
+
+export function findUserById(db, id) {
+  return db.prepare("SELECT id, username FROM users WHERE id = ?").get(id);
+}
