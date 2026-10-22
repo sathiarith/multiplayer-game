@@ -1,11 +1,66 @@
 import express from "express";
+import session from "express-session";
 import bcrypt from "bcryptjs";
-import { createUser } from "./users.js";
+import { createUser, findUserByUsername, findUserById } from "./users.js";
 import { validateCredentials } from "./validation.js";
 
-export function createApp(db, { bcryptCost = 12 } = {}) {
+export const COOKIE_NAME = "sid";
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+const INVALID_CREDENTIALS = {
+  error: {
+    code: "invalid_credentials",
+    message: "Invalid username or password",
+  },
+};
+const NOT_AUTHENTICATED = {
+  error: { code: "not_authenticated", message: "Please log in" },
+};
+
+// express-session reports completion through callbacks; wrap them in promises.
+const regenerate = (req) =>
+  new Promise((resolve, reject) =>
+    req.session.regenerate((err) => (err ? reject(err) : resolve())),
+  );
+const destroy = (req) =>
+  new Promise((resolve, reject) =>
+    req.session.destroy((err) => (err ? reject(err) : resolve())),
+  );
+
+export function createApp(
+  db,
+  { bcryptCost = 12, sessionSecret, secureCookies = false } = {},
+) {
+  if (!sessionSecret) throw new Error("sessionSecret is required");
+
+  // Checked against when the username does not exist, so that path costs the
+  // same time as a real password check.
+  const dummyHash = bcrypt.hashSync("not-a-real-password", bcryptCost);
+
   const app = express();
   app.use(express.json({ limit: "10kb" }));
+  app.use(
+    session({
+      name: COOKIE_NAME,
+      secret: sessionSecret,
+      resave: false,
+      saveUninitialized: false, // no cookie until we actually log someone in
+      cookie: {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: secureCookies,
+        maxAge: WEEK_MS,
+      },
+    }),
+  );
+
+  // Runs before a route: lets logged-in users through, answers 401 otherwise.
+  function requireAuth(req, res, next) {
+    const user = req.session.userId && findUserById(db, req.session.userId);
+    if (!user) return res.status(401).json(NOT_AUTHENTICATED);
+    req.user = user;
+    next();
+  }
 
   app.post("/api/register", async (req, res) => {
     const { username, password } = req.body ?? {};
@@ -25,15 +80,56 @@ export function createApp(db, { bcryptCost = 12 } = {}) {
 
     try {
       const user = createUser(db, username, hash);
-      return res.status(201).json(user); // id and username only, never the hash
+      return res.status(201).json(user);
     } catch (err) {
       if (err.code === "SQLITE_CONSTRAINT_UNIQUE") {
         return res.status(409).json({
           error: { code: "username_taken", message: "That username is taken" },
         });
       }
-      throw err; // anything else is a real bug; Express answers 500
+      throw err;
     }
+  });
+
+  app.post("/api/login", async (req, res) => {
+    const { username, password } = req.body ?? {};
+
+    // Only a shape check here. Password rules apply when choosing one, not when using it.
+    if (
+      typeof username !== "string" ||
+      typeof password !== "string" ||
+      username.length > 50 ||
+      password.length > 200
+    ) {
+      return res.status(400).json({
+        error: {
+          code: "invalid_input",
+          message: "Username and password are required",
+        },
+      });
+    }
+
+    const user = findUserByUsername(db, username);
+    // Always run one bcrypt comparison, whether or not the user exists.
+    const ok = await bcrypt.compare(
+      password,
+      user ? user.password_hash : dummyHash,
+    );
+    if (!user || !ok) return res.status(401).json(INVALID_CREDENTIALS);
+
+    await regenerate(req); // new session ID on privilege change
+    req.session.userId = user.id;
+    return res.json({ id: user.id, username: user.username });
+  });
+
+  app.post("/api/logout", async (req, res) => {
+    await destroy(req); // deletes the server-side record
+    res.clearCookie(COOKIE_NAME); // and tells the browser to drop the cookie
+    return res.status(204).end();
+  });
+
+  app.get("/api/me", requireAuth, (req, res) => {
+    res.json(req.user);
   });
 
   return app;

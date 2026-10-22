@@ -8,7 +8,7 @@ let db;
 
 beforeAll(async () => {
   db = openDb(":memory:");
-  const app = createApp(db, { bcryptCost: 4 }); // low cost keeps tests fast
+  const app = createApp(db, { bcryptCost: 4, sessionSecret: "test-secret" });
   await new Promise((resolve) => {
     server = app.listen(0, "127.0.0.1", resolve); // port 0 = any free port
   });
