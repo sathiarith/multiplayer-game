@@ -1,21 +1,21 @@
 import crypto from "node:crypto";
+import { loadConfig } from "./config.js";
 import { openDb } from "./db.js";
 import { createApp } from "./app.js";
 
-const PORT = Number(process.env.PORT ?? 3001);
+const config = loadConfig(); // throws with a clear message if settings are wrong
 
-let sessionSecret = process.env.SESSION_SECRET;
+let sessionSecret = config.sessionSecret;
 if (!sessionSecret) {
   sessionSecret = crypto.randomBytes(32).toString("hex");
   console.warn("SESSION_SECRET is not set: using a random one for this run.");
 }
 
-const app = createApp(openDb(), {
+const app = createApp(openDb(config.dbPath), {
   sessionSecret,
-  secureCookies: process.env.NODE_ENV === "production",
+  secureCookies: config.secureCookies,
 });
 
-// 127.0.0.1 = reachable only from this machine
-app.listen(PORT, "127.0.0.1", () => {
-  console.log(`API listening on http://127.0.0.1:${PORT}`);
+app.listen(config.port, config.host, () => {
+  console.log(`API listening on http://${config.host}:${config.port}`);
 });

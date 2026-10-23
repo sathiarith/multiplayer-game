@@ -9,7 +9,7 @@ export function openDb(file = process.env.DB_PATH ?? "./data/game.db") {
     fs.mkdirSync(path.dirname(file), { recursive: true });
   }
   const db = new Database(file);
-    db.pragma("foreign_keys = ON"); // off by default in SQLite
+  db.pragma("foreign_keys = ON"); // off by default in SQLite
   migrate(db);
   return db;
 }
