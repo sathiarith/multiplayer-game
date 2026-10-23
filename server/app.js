@@ -15,6 +15,7 @@ import {
   MAX_CHARACTERS,
   WORLD,
 } from "./characters.js";
+import { notFoundHandler, errorHandler } from "./errors.js";
 
 export const COOKIE_NAME = "sid";
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -212,6 +213,9 @@ export function createApp(
     }
     return res.json({ id, x, y });
   });
+
+  app.use(notFoundHandler);
+  app.use(errorHandler);
 
   return app;
 }
