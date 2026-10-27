@@ -1,34 +1,29 @@
-import { test, expect, beforeAll, afterAll } from "vitest";
-import { startTestServer } from "./test-helpers.js";
+import { test, expect, beforeEach, afterEach, vi } from "vitest";
+import request from "supertest";
+import { createTestApp, loggedInAgent } from "./test-helpers.js";
 import { SPAWN } from "./characters.js";
 
-let t;
-beforeAll(async () => {
-  t = await startTestServer();
+let app;
+let db;
+beforeEach(() => {
+  ({ app, db } = createTestApp());
 });
-afterAll(() => t.close());
-
-// Registers a user and returns a client that is logged in as them.
-async function loggedIn(username) {
-  const c = t.client();
-  const creds = { username, password: "correct-horse-battery" };
-  await c.post("/api/register", creds);
-  await c.post("/api/login", creds);
-  return c;
-}
+afterEach(() => db.close());
 
 test("every character route requires login", async () => {
-  const c = t.client();
-  expect((await c.get("/api/characters")).status).toBe(401);
-  expect((await c.post("/api/characters", { name: "Aria" })).status).toBe(401);
+  expect((await request(app).get("/api/characters")).status).toBe(401);
   expect(
-    (await c.put("/api/characters/1/position", { x: 1, y: 1 })).status,
+    (await request(app).post("/api/characters").send({ name: "Aria" })).status,
   ).toBe(401);
+  const put = await request(app)
+    .put("/api/characters/1/position")
+    .send({ x: 1, y: 1 });
+  expect(put.status).toBe(401);
 });
 
 test("create a character, then list it", async () => {
-  const c = await loggedIn("alice");
-  const res = await c.post("/api/characters", { name: "Aria" });
+  const agent = await loggedInAgent(app, "alice");
+  const res = await agent.post("/api/characters").send({ name: "Aria" });
   expect(res.status).toBe(201);
   expect(res.body).toMatchObject({
     name: "Aria",
@@ -38,48 +33,51 @@ test("create a character, then list it", async () => {
     y: SPAWN.y,
   });
 
-  const list = await c.get("/api/characters");
-  expect(list.body.map((ch) => ch.name)).toEqual(["Aria"]);
+  const list = await agent.get("/api/characters");
+  expect(list.body.map((c) => c.name)).toEqual(["Aria"]);
 });
 
 test("invalid names and classes return 400", async () => {
-  const c = await loggedIn("bobby");
+  const agent = await loggedInAgent(app, "alice");
   for (const name of ["", "ab", "x".repeat(17), "bad name", 42, undefined]) {
-    expect((await c.post("/api/characters", { name })).status).toBe(400);
+    expect((await agent.post("/api/characters").send({ name })).status).toBe(
+      400,
+    );
   }
-  const res = await c.post("/api/characters", {
-    name: "Valid",
-    class: "wizard",
-  });
+  const res = await agent
+    .post("/api/characters")
+    .send({ name: "Valid", class: "wizard" });
   expect(res.status).toBe(400);
 });
 
 test("a fourth character returns 409", async () => {
-  const c = await loggedIn("carol");
+  const agent = await loggedInAgent(app, "alice");
   for (const name of ["four1", "four2", "four3"]) {
-    expect((await c.post("/api/characters", { name })).status).toBe(201);
+    expect((await agent.post("/api/characters").send({ name })).status).toBe(
+      201,
+    );
   }
-  const res = await c.post("/api/characters", { name: "four4" });
+  const res = await agent.post("/api/characters").send({ name: "four4" });
   expect(res.status).toBe(409);
   expect(res.body.error.code).toBe("character_limit");
 });
 
 test("character names are unique across users, ignoring case", async () => {
-  const a = await loggedIn("dupa");
-  const b = await loggedIn("dupb");
-  expect((await a.post("/api/characters", { name: "Shared" })).status).toBe(
-    201,
-  );
-  const res = await b.post("/api/characters", { name: "SHARED" });
+  const a = await loggedInAgent(app, "alice");
+  const b = await loggedInAgent(app, "bobby");
+  expect(
+    (await a.post("/api/characters").send({ name: "Shared" })).status,
+  ).toBe(201);
+  const res = await b.post("/api/characters").send({ name: "SHARED" });
   expect(res.status).toBe(409);
   expect(res.body.error.code).toBe("name_taken");
 });
 
 test("users only see their own characters", async () => {
-  const a = await loggedIn("lista");
-  const b = await loggedIn("listb");
-  await a.post("/api/characters", { name: "OnlyForA" });
-  await b.post("/api/characters", { name: "OnlyForB" });
+  const a = await loggedInAgent(app, "alice");
+  const b = await loggedInAgent(app, "bobby");
+  await a.post("/api/characters").send({ name: "OnlyForA" });
+  await b.post("/api/characters").send({ name: "OnlyForB" });
   expect((await a.get("/api/characters")).body.map((c) => c.name)).toEqual([
     "OnlyForA",
   ]);
@@ -89,26 +87,28 @@ test("users only see their own characters", async () => {
 });
 
 test("the owner can save a position", async () => {
-  const c = await loggedIn("mover");
-  const { body: ch } = await c.post("/api/characters", { name: "Mover" });
-  const res = await c.put(`/api/characters/${ch.id}/position`, {
-    x: 150.5,
-    y: 200,
-  });
+  const agent = await loggedInAgent(app, "alice");
+  const { body: ch } = await agent
+    .post("/api/characters")
+    .send({ name: "Mover" });
+  const res = await agent
+    .put(`/api/characters/${ch.id}/position`)
+    .send({ x: 150.5, y: 200 });
   expect(res.status).toBe(200);
-  const list = await c.get("/api/characters");
+  const list = await agent.get("/api/characters");
   expect(list.body[0]).toMatchObject({ x: 150.5, y: 200 });
 });
 
 test("another user's character cannot be changed, and looks like it does not exist", async () => {
-  const owner = await loggedIn("owner");
-  const intruder = await loggedIn("intruder");
-  const { body: ch } = await owner.post("/api/characters", { name: "Guarded" });
+  const owner = await loggedInAgent(app, "alice");
+  const intruder = await loggedInAgent(app, "mallory");
+  const { body: ch } = await owner
+    .post("/api/characters")
+    .send({ name: "Guarded" });
 
-  const res = await intruder.put(`/api/characters/${ch.id}/position`, {
-    x: 5,
-    y: 5,
-  });
+  const res = await intruder
+    .put(`/api/characters/${ch.id}/position`)
+    .send({ x: 5, y: 5 });
   expect(res.status).toBe(404);
 
   const list = await owner.get("/api/characters");
@@ -116,8 +116,10 @@ test("another user's character cannot be changed, and looks like it does not exi
 });
 
 test("bad positions are rejected with 400", async () => {
-  const c = await loggedIn("badpos");
-  const { body: ch } = await c.post("/api/characters", { name: "BadPos" });
+  const agent = await loggedInAgent(app, "alice");
+  const { body: ch } = await agent
+    .post("/api/characters")
+    .send({ name: "BadPos" });
   const bad = [
     { x: "5", y: 5 },
     { x: -1, y: 5 },
@@ -126,17 +128,41 @@ test("bad positions are rejected with 400", async () => {
     {},
   ];
   for (const body of bad) {
-    const res = await c.put(`/api/characters/${ch.id}/position`, body);
+    const res = await agent.put(`/api/characters/${ch.id}/position`).send(body);
     expect(res.status).toBe(400);
   }
 });
 
 test("unknown or malformed character ids return 404", async () => {
-  const c = await loggedIn("noid");
+  const agent = await loggedInAgent(app, "alice");
   expect(
-    (await c.put("/api/characters/99999/position", { x: 1, y: 1 })).status,
+    (await agent.put("/api/characters/99999/position").send({ x: 1, y: 1 }))
+      .status,
   ).toBe(404);
   expect(
-    (await c.put("/api/characters/abc/position", { x: 1, y: 1 })).status,
+    (await agent.put("/api/characters/abc/position").send({ x: 1, y: 1 }))
+      .status,
   ).toBe(404);
+});
+
+test("an unexpected database failure creating a character returns a generic 500", async () => {
+  const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+  const agent = await loggedInAgent(app, "alice");
+  db.exec("DROP TABLE characters"); // the user and session still exist
+  const res = await agent.post("/api/characters").send({ name: "Aria" });
+  expect(res.status).toBe(500);
+  expect(res.body.error.code).toBe("internal_error");
+  spy.mockRestore();
+});
+
+test("character routes with no request body answer 400, not a crash", async () => {
+  const agent = await loggedInAgent(app, "alice");
+  expect((await agent.post("/api/characters")).status).toBe(400);
+
+  const { body: ch } = await agent
+    .post("/api/characters")
+    .send({ name: "NoBody" });
+  expect((await agent.put(`/api/characters/${ch.id}/position`)).status).toBe(
+    400,
+  );
 });
