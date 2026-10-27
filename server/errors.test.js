@@ -63,3 +63,20 @@ test("unexpected errors become a generic 500 that leaks nothing", async () => {
   expect(spy).toHaveBeenCalled(); // the details went to the log instead
   spy.mockRestore();
 });
+
+test("if a response has already started, the error is passed on untouched", () => {
+  const err = new Error("too late");
+  const res = { headersSent: true, status: vi.fn(), json: vi.fn() };
+  const next = vi.fn();
+
+  errorHandler(err, {}, res, next);
+
+  expect(next).toHaveBeenCalledWith(err);
+  expect(res.status).not.toHaveBeenCalled();
+  expect(res.json).not.toHaveBeenCalled();
+});
+
+test("register and login with no request body answer 400, not a crash", async () => {
+  expect((await request(app).post("/api/register")).status).toBe(400);
+  expect((await request(app).post("/api/login")).status).toBe(400);
+});

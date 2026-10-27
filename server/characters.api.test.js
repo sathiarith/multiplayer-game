@@ -1,4 +1,4 @@
-import { test, expect, beforeEach, afterEach } from "vitest";
+import { test, expect, beforeEach, afterEach, vi } from "vitest";
 import request from "supertest";
 import { createTestApp, loggedInAgent } from "./test-helpers.js";
 import { SPAWN } from "./characters.js";
@@ -143,4 +143,26 @@ test("unknown or malformed character ids return 404", async () => {
     (await agent.put("/api/characters/abc/position").send({ x: 1, y: 1 }))
       .status,
   ).toBe(404);
+});
+
+test("an unexpected database failure creating a character returns a generic 500", async () => {
+  const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+  const agent = await loggedInAgent(app, "alice");
+  db.exec("DROP TABLE characters"); // the user and session still exist
+  const res = await agent.post("/api/characters").send({ name: "Aria" });
+  expect(res.status).toBe(500);
+  expect(res.body.error.code).toBe("internal_error");
+  spy.mockRestore();
+});
+
+test("character routes with no request body answer 400, not a crash", async () => {
+  const agent = await loggedInAgent(app, "alice");
+  expect((await agent.post("/api/characters")).status).toBe(400);
+
+  const { body: ch } = await agent
+    .post("/api/characters")
+    .send({ name: "NoBody" });
+  expect((await agent.put(`/api/characters/${ch.id}/position`)).status).toBe(
+    400,
+  );
 });

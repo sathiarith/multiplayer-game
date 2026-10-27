@@ -1,6 +1,7 @@
-import { test, expect, beforeEach, afterEach } from "vitest";
+import { test, expect, beforeEach, afterEach, vi } from "vitest";
 import request from "supertest";
 import { createTestApp, ALICE } from "./test-helpers.js";
+import { createApp } from "./app.js";
 
 let app;
 let db;
@@ -39,4 +40,18 @@ test("invalid input returns 400 with field messages", async () => {
   expect(res.status).toBe(400);
   expect(res.body.error.fields.username).toBeDefined();
   expect(res.body.error.fields.password).toBeDefined();
+});
+
+test("an unexpected database failure during registration returns a generic 500", async () => {
+  const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+  db.exec("DROP TABLE users"); // simulate a broken database
+  const res = await register(ALICE);
+  expect(res.status).toBe(500);
+  expect(res.body.error.code).toBe("internal_error");
+  spy.mockRestore();
+});
+
+test("createApp refuses to start without a session secret", () => {
+  expect(() => createApp(db)).toThrow(/sessionSecret/);
+  expect(() => createApp(db, { sessionSecret: "" })).toThrow(/sessionSecret/);
 });
