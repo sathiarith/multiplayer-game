@@ -29,7 +29,9 @@ export function errorHandler(err, req, res, next) {
   }
 
   // Anything else is a bug on our side: log it here, say nothing specific to the client.
-  console.error(err);
+  // req.log is the per-request logger: its lines carry the request id.
+  if (req.log) req.log.error({ err }, "unhandled error");
+  else console.error(err);
   return res.status(500).json({
     error: { code: "internal_error", message: "Something went wrong" },
   });

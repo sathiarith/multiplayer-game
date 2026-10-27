@@ -16,6 +16,9 @@ import {
   WORLD,
 } from "./characters.js";
 import { notFoundHandler, errorHandler } from "./errors.js";
+import crypto from "node:crypto";
+import pinoHttp from "pino-http";
+import { createLogger } from "./logger.js";
 
 export const COOKIE_NAME = "sid";
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -42,7 +45,12 @@ const destroy = (req) =>
 
 export function createApp(
   db,
-  { bcryptCost = 12, sessionSecret, secureCookies = false } = {},
+  {
+    bcryptCost = 12,
+    sessionSecret,
+    secureCookies = false,
+    logger = createLogger({ level: "silent" }),
+  } = {},
 ) {
   if (!sessionSecret) throw new Error("sessionSecret is required");
 
@@ -51,6 +59,40 @@ export function createApp(
   const dummyHash = bcrypt.hashSync("not-a-real-password", bcryptCost);
 
   const app = express();
+  app.use(
+    pinoHttp({
+      logger,
+      // Keep a well-formed incoming id; otherwise make a new one.
+      genReqId: (req, res) => {
+        const incoming = req.headers["x-request-id"];
+        const id =
+          typeof incoming === "string" &&
+          /^[A-Za-z0-9._-]{1,64}$/.test(incoming)
+            ? incoming
+            : crypto.randomUUID();
+        res.setHeader("X-Request-Id", id);
+        return id;
+      },
+      autoLogging: { ignore: (req) => req.url === "/health" },
+      customLogLevel: (req, res, err) => {
+        if (err || res.statusCode >= 500) return "error";
+        if (res.statusCode >= 400) return "warn";
+        return "info";
+      },
+      customProps: (req) => ({ userId: req.session?.userId }),
+    }),
+  );
+
+  // Before the session middleware, so polling never creates a session.
+  app.get("/health", (req, res) => {
+    try {
+      db.prepare("SELECT 1").get();
+      res.json({ status: "ok", uptime: Math.floor(process.uptime()) });
+    } catch (err) {
+      req.log.error({ err }, "health check failed");
+      res.status(503).json({ status: "unavailable" });
+    }
+  });
   app.use(express.json({ limit: "10kb" }));
   app.use(
     session({

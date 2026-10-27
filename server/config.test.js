@@ -40,3 +40,13 @@ test("production with a good secret uses secure cookies", () => {
   const c = loadConfig({ NODE_ENV: "production", SESSION_SECRET: GOOD_SECRET });
   expect(c).toMatchObject({ production: true, secureCookies: true });
 });
+
+test("log level defaults by environment and rejects unknown values", () => {
+  expect(loadConfig({}).logLevel).toBe("debug");
+  expect(
+    loadConfig({ NODE_ENV: "production", SESSION_SECRET: GOOD_SECRET })
+      .logLevel,
+  ).toBe("info");
+  expect(loadConfig({ LOG_LEVEL: "warn" }).logLevel).toBe("warn");
+  expect(() => loadConfig({ LOG_LEVEL: "loud" })).toThrow(/LOG_LEVEL/);
+});
