@@ -1,13 +1,29 @@
 import request from "supertest";
 import { openDb } from "./db.js";
 import { createApp } from "./app.js";
+import { createLogger } from "./logger.js";
+
+// A logger that collects each log line (parsed) in an array instead of printing it.
+export function createLogCapture() {
+  const lines = [];
+  const destination = {
+    write(chunk) {
+      lines.push(JSON.parse(chunk));
+    },
+  };
+  return { lines, logger: createLogger({ level: "info", destination }) };
+}
 
 export const ALICE = { username: "alice", password: "correct-horse-battery" };
 
 // A fresh app with its own empty in-memory database.
-export function createTestApp() {
+export function createTestApp({ logger } = {}) {
   const db = openDb(":memory:");
-  const app = createApp(db, { bcryptCost: 4, sessionSecret: "test-secret" });
+  const app = createApp(db, {
+    bcryptCost: 4,
+    sessionSecret: "test-secret",
+    logger,
+  });
   return { app, db };
 }
 

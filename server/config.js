@@ -23,12 +23,27 @@ export function loadConfig(env = process.env) {
     }
   }
 
+  const LOG_LEVELS = [
+    "fatal",
+    "error",
+    "warn",
+    "info",
+    "debug",
+    "trace",
+    "silent",
+  ];
+  const logLevel = env.LOG_LEVEL ?? (production ? "info" : "debug");
+  if (!LOG_LEVELS.includes(logLevel)) {
+    throw new Error(`Invalid LOG_LEVEL: ${env.LOG_LEVEL}`);
+  }
+
   return {
     nodeEnv,
     production,
     port,
     host: env.HOST ?? "127.0.0.1",
     dbPath: env.DB_PATH ?? "./data/game.db",
+    logLevel,
     sessionSecret, // may be undefined in development; index.js generates one
     secureCookies: production, // only send cookies over HTTPS in production
   };
