@@ -16,13 +16,13 @@ export function createLogCapture() {
 
 export const ALICE = { username: "alice", password: "correct-horse-battery" };
 
-// A fresh app with its own empty in-memory database.
-export function createTestApp({ logger } = {}) {
+export function createTestApp({ logger, ...options } = {}) {
   const db = openDb(":memory:");
   const app = createApp(db, {
     bcryptCost: 4,
     sessionSecret: "test-secret",
     logger,
+    ...options,
   });
   return { app, db };
 }

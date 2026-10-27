@@ -19,6 +19,8 @@ import { notFoundHandler, errorHandler } from "./errors.js";
 import crypto from "node:crypto";
 import pinoHttp from "pino-http";
 import { createLogger } from "./logger.js";
+import helmet from "helmet";
+import { rateLimit } from "express-rate-limit";
 
 export const COOKIE_NAME = "sid";
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -43,6 +45,28 @@ const destroy = (req) =>
     req.session.destroy((err) => (err ? reject(err) : resolve())),
   );
 
+const DEFAULT_RATE_LIMITS = {
+  login: { windowMs: 15 * 60 * 1000, limit: 10 },
+  register: { windowMs: 15 * 60 * 1000, limit: 10 },
+};
+
+function makeLimiter({ windowMs, limit }, options = {}) {
+  return rateLimit({
+    windowMs,
+    limit,
+    standardHeaders: "draft-7", // sends Retry-After and RateLimit headers
+    legacyHeaders: false,
+    handler: (req, res) =>
+      res.status(429).json({
+        error: {
+          code: "rate_limited",
+          message: "Too many attempts, please try again later",
+        },
+      }),
+    ...options,
+  });
+}
+
 export function createApp(
   db,
   {
@@ -50,15 +74,26 @@ export function createApp(
     sessionSecret,
     secureCookies = false,
     logger = createLogger({ level: "silent" }),
+    rateLimits = {},
   } = {},
 ) {
   if (!sessionSecret) throw new Error("sessionSecret is required");
+
+  const limits = {
+    login: { ...DEFAULT_RATE_LIMITS.login, ...rateLimits.login },
+    register: { ...DEFAULT_RATE_LIMITS.register, ...rateLimits.register },
+  };
+  const loginLimiter = makeLimiter(limits.login, {
+    skipSuccessfulRequests: true,
+  });
+  const registerLimiter = makeLimiter(limits.register);
 
   // Checked against when the username does not exist, so that path costs the
   // same time as a real password check.
   const dummyHash = bcrypt.hashSync("not-a-real-password", bcryptCost);
 
   const app = express();
+  app.use(helmet());
   app.use(
     pinoHttp({
       logger,
@@ -117,7 +152,7 @@ export function createApp(
     next();
   }
 
-  app.post("/api/register", async (req, res) => {
+  app.post("/api/register", registerLimiter, async (req, res) => {
     const { username, password } = req.body ?? {};
 
     const errors = validateCredentials({ username, password });
@@ -146,7 +181,7 @@ export function createApp(
     }
   });
 
-  app.post("/api/login", async (req, res) => {
+  app.post("/api/login", loginLimiter, async (req, res) => {
     const { username, password } = req.body ?? {};
 
     // Only a shape check here. Password rules apply when choosing one, not when using it.
