@@ -3,9 +3,11 @@ import session from "express-session";
 import bcrypt from "bcryptjs";
 import { createUser, findUserByUsername, findUserById } from "./users.js";
 import {
-  validateCredentials,
-  validateNewCharacter,
-  validatePosition,
+  parseCredentials,
+  parseLogin,
+  parseNewCharacter,
+  parsePosition,
+  parseId,
 } from "./validation.js";
 import {
   listCharacters,
@@ -89,6 +91,12 @@ function originGuard(allowedOrigins) {
       },
     });
   };
+}
+
+function badRequest(res, fields) {
+  return res.status(400).json({
+    error: { code: "invalid_input", message: "Invalid input", fields },
+  });
 }
 
 export function createApp(
@@ -190,18 +198,9 @@ export function createApp(
   }
 
   app.post("/api/register", registerLimiter, async (req, res) => {
-    const { username, password } = req.body ?? {};
-
-    const errors = validateCredentials({ username, password });
-    if (Object.keys(errors).length > 0) {
-      return res.status(400).json({
-        error: {
-          code: "invalid_input",
-          message: "Invalid input",
-          fields: errors,
-        },
-      });
-    }
+    const parsed = parseCredentials(req.body);
+    if (parsed.fields) return badRequest(res, parsed.fields);
+    const { username, password } = parsed.data;
 
     const hash = await bcrypt.hash(password, bcryptCost);
 
@@ -219,22 +218,9 @@ export function createApp(
   });
 
   app.post("/api/login", loginLimiter, async (req, res) => {
-    const { username, password } = req.body ?? {};
-
-    // Only a shape check here. Password rules apply when choosing one, not when using it.
-    if (
-      typeof username !== "string" ||
-      typeof password !== "string" ||
-      username.length > 50 ||
-      password.length > 200
-    ) {
-      return res.status(400).json({
-        error: {
-          code: "invalid_input",
-          message: "Username and password are required",
-        },
-      });
-    }
+    const parsed = parseLogin(req.body);
+    if (parsed.fields) return badRequest(res, parsed.fields);
+    const { username, password } = parsed.data;
 
     const user = findUserByUsername(db, username);
     // Always run one bcrypt comparison, whether or not the user exists.
@@ -264,18 +250,9 @@ export function createApp(
   });
 
   app.post("/api/characters", requireAuth, (req, res) => {
-    const { name, class: characterClass } = req.body ?? {};
-
-    const errors = validateNewCharacter({ name, class: characterClass });
-    if (Object.keys(errors).length > 0) {
-      return res.status(400).json({
-        error: {
-          code: "invalid_input",
-          message: "Invalid input",
-          fields: errors,
-        },
-      });
-    }
+    const parsed = parseNewCharacter(req.body);
+    if (parsed.fields) return badRequest(res, parsed.fields);
+    const { name, class: characterClass } = parsed.data;
 
     try {
       const character = createCharacter(db, req.user.id, name, characterClass);
@@ -306,20 +283,12 @@ export function createApp(
     const NOT_FOUND = {
       error: { code: "not_found", message: "Character not found" },
     };
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id < 1) return res.status(404).json(NOT_FOUND);
+    const id = parseId(req.params.id);
+    if (id === null) return res.status(404).json(NOT_FOUND);
 
-    const { x, y } = req.body ?? {};
-    const errors = validatePosition({ x, y }, WORLD);
-    if (Object.keys(errors).length > 0) {
-      return res.status(400).json({
-        error: {
-          code: "invalid_input",
-          message: "Invalid input",
-          fields: errors,
-        },
-      });
-    }
+    const parsed = parsePosition(req.body, WORLD);
+    if (parsed.fields) return badRequest(res, parsed.fields);
+    const { x, y } = parsed.data;
 
     // Same answer whether the character is missing or belongs to someone else.
     if (!updatePosition(db, req.user.id, id, x, y)) {
