@@ -21,6 +21,7 @@ import pinoHttp from "pino-http";
 import { createLogger } from "./logger.js";
 import helmet from "helmet";
 import { rateLimit } from "express-rate-limit";
+import cors from "cors";
 
 export const COOKIE_NAME = "sid";
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -67,6 +68,29 @@ function makeLimiter({ windowMs, limit }, options = {}) {
   });
 }
 
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+// Refuses state-changing requests that a browser sent from a page we do not know.
+// Requests with no Origin header do not come from a browser page, so they pass.
+function originGuard(allowedOrigins) {
+  return (req, res, next) => {
+    const origin = req.headers.origin;
+    if (
+      SAFE_METHODS.has(req.method) ||
+      origin === undefined ||
+      allowedOrigins.includes(origin)
+    ) {
+      return next();
+    }
+    return res.status(403).json({
+      error: {
+        code: "forbidden_origin",
+        message: "Request origin is not allowed",
+      },
+    });
+  };
+}
+
 export function createApp(
   db,
   {
@@ -75,6 +99,7 @@ export function createApp(
     secureCookies = false,
     logger = createLogger({ level: "silent" }),
     rateLimits = {},
+    allowedOrigins = [],
   } = {},
 ) {
   if (!sessionSecret) throw new Error("sessionSecret is required");
@@ -117,6 +142,18 @@ export function createApp(
       customProps: (req) => ({ userId: req.session?.userId }),
     }),
   );
+
+  app.use(
+    cors({
+      origin: allowedOrigins, // an exact-match list; no wildcard
+      credentials: true, // allow the session cookie to travel
+      methods: ["GET", "POST", "PUT", "DELETE"],
+      allowedHeaders: ["Content-Type"],
+      exposedHeaders: ["X-Request-Id"], // so front-end code can read it
+      maxAge: 600, // browsers may cache the preflight answer for 10 minutes
+    }),
+  );
+  app.use(originGuard(allowedOrigins));
 
   // Before the session middleware, so polling never creates a session.
   app.get("/health", (req, res) => {

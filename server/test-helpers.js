@@ -3,6 +3,8 @@ import { openDb } from "./db.js";
 import { createApp } from "./app.js";
 import { createLogger } from "./logger.js";
 
+export const TEST_ORIGIN = "http://localhost:3000";
+
 // A logger that collects each log line (parsed) in an array instead of printing it.
 export function createLogCapture() {
   const lines = [];
@@ -22,6 +24,7 @@ export function createTestApp({ logger, ...options } = {}) {
     bcryptCost: 4,
     sessionSecret: "test-secret",
     logger,
+    allowedOrigins: [TEST_ORIGIN],
     ...options,
   });
   return { app, db };

@@ -37,15 +37,66 @@ test("production demands a real session secret", () => {
 });
 
 test("production with a good secret uses secure cookies", () => {
-  const c = loadConfig({ NODE_ENV: "production", SESSION_SECRET: GOOD_SECRET });
+  const c = loadConfig({
+    NODE_ENV: "production",
+    SESSION_SECRET: GOOD_SECRET,
+    ALLOWED_ORIGINS: "https://game.example.com",
+  });
   expect(c).toMatchObject({ production: true, secureCookies: true });
+});
+
+test("allowed origins default to the local dev pages", () => {
+  expect(loadConfig({}).allowedOrigins).toEqual([
+    "http://127.0.0.1:3000",
+    "http://localhost:3000",
+  ]);
+});
+
+test("allowed origins are parsed from a comma-separated list", () => {
+  const c = loadConfig({
+    ALLOWED_ORIGINS: " http://localhost:5173 , https://game.example.com ",
+  });
+  expect(c.allowedOrigins).toEqual([
+    "http://localhost:5173",
+    "https://game.example.com",
+  ]);
+});
+
+test("malformed or wildcard origins are rejected", () => {
+  const bad = [
+    "*",
+    "game.example.com",
+    "http://localhost:3000/",
+    "http://x.com/path",
+    "ftp://x.com",
+    "null",
+  ];
+  for (const ALLOWED_ORIGINS of bad) {
+    expect(() => loadConfig({ ALLOWED_ORIGINS })).toThrow(/ALLOWED_ORIGINS/);
+  }
+});
+
+test("production requires explicit https origins", () => {
+  const prod = { NODE_ENV: "production", SESSION_SECRET: GOOD_SECRET };
+  expect(() => loadConfig(prod)).toThrow(/ALLOWED_ORIGINS/);
+  expect(() =>
+    loadConfig({ ...prod, ALLOWED_ORIGINS: "http://game.example.com" }),
+  ).toThrow(/https/);
+  const ok = loadConfig({
+    ...prod,
+    ALLOWED_ORIGINS: "https://game.example.com",
+  });
+  expect(ok.allowedOrigins).toEqual(["https://game.example.com"]);
 });
 
 test("log level defaults by environment and rejects unknown values", () => {
   expect(loadConfig({}).logLevel).toBe("debug");
   expect(
-    loadConfig({ NODE_ENV: "production", SESSION_SECRET: GOOD_SECRET })
-      .logLevel,
+    loadConfig({
+      NODE_ENV: "production",
+      SESSION_SECRET: GOOD_SECRET,
+      ALLOWED_ORIGINS: "https://game.example.com",
+    }).logLevel,
   ).toBe("info");
   expect(loadConfig({ LOG_LEVEL: "warn" }).logLevel).toBe("warn");
   expect(() => loadConfig({ LOG_LEVEL: "loud" })).toThrow(/LOG_LEVEL/);
