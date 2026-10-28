@@ -1,3 +1,27 @@
+const DEV_ORIGINS = "http://127.0.0.1:3000,http://localhost:3000";
+
+// Parses a comma-separated list of origins: scheme://host[:port], nothing else.
+function parseOrigins(raw) {
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      let url;
+      try {
+        url = new URL(entry);
+      } catch {
+        throw new Error(`Invalid ALLOWED_ORIGINS entry: ${entry}`);
+      }
+      if (!["http:", "https:"].includes(url.protocol) || url.origin !== entry) {
+        throw new Error(
+          `Invalid ALLOWED_ORIGINS entry (use scheme://host[:port], no path or trailing slash): ${entry}`,
+        );
+      }
+      return entry;
+    });
+}
+
 // Reads settings from environment variables and checks them.
 // Takes `env` as a parameter so tests can pass fake ones.
 export function loadConfig(env = process.env) {
@@ -33,8 +57,16 @@ export function loadConfig(env = process.env) {
     "silent",
   ];
   const logLevel = env.LOG_LEVEL ?? (production ? "info" : "debug");
+
   if (!LOG_LEVELS.includes(logLevel)) {
     throw new Error(`Invalid LOG_LEVEL: ${env.LOG_LEVEL}`);
+  }
+  if (production && !env.ALLOWED_ORIGINS) {
+    throw new Error("ALLOWED_ORIGINS must be set in production");
+  }
+  const allowedOrigins = parseOrigins(env.ALLOWED_ORIGINS ?? DEV_ORIGINS);
+  if (production && allowedOrigins.some((o) => !o.startsWith("https://"))) {
+    throw new Error("ALLOWED_ORIGINS must use https:// in production");
   }
 
   return {
@@ -46,5 +78,6 @@ export function loadConfig(env = process.env) {
     logLevel,
     sessionSecret, // may be undefined in development; index.js generates one
     secureCookies: production, // only send cookies over HTTPS in production
+    allowedOrigins,
   };
 }

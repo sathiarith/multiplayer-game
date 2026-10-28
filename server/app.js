@@ -3,9 +3,11 @@ import session from "express-session";
 import bcrypt from "bcryptjs";
 import { createUser, findUserByUsername, findUserById } from "./users.js";
 import {
-  validateCredentials,
-  validateNewCharacter,
-  validatePosition,
+  parseCredentials,
+  parseLogin,
+  parseNewCharacter,
+  parsePosition,
+  parseId,
 } from "./validation.js";
 import {
   listCharacters,
@@ -19,6 +21,9 @@ import { notFoundHandler, errorHandler } from "./errors.js";
 import crypto from "node:crypto";
 import pinoHttp from "pino-http";
 import { createLogger } from "./logger.js";
+import helmet from "helmet";
+import { rateLimit } from "express-rate-limit";
+import cors from "cors";
 
 export const COOKIE_NAME = "sid";
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -43,6 +48,57 @@ const destroy = (req) =>
     req.session.destroy((err) => (err ? reject(err) : resolve())),
   );
 
+const DEFAULT_RATE_LIMITS = {
+  login: { windowMs: 15 * 60 * 1000, limit: 10 },
+  register: { windowMs: 15 * 60 * 1000, limit: 10 },
+};
+
+function makeLimiter({ windowMs, limit }, options = {}) {
+  return rateLimit({
+    windowMs,
+    limit,
+    standardHeaders: "draft-7", // sends Retry-After and RateLimit headers
+    legacyHeaders: false,
+    handler: (req, res) =>
+      res.status(429).json({
+        error: {
+          code: "rate_limited",
+          message: "Too many attempts, please try again later",
+        },
+      }),
+    ...options,
+  });
+}
+
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+// Refuses state-changing requests that a browser sent from a page we do not know.
+// Requests with no Origin header do not come from a browser page, so they pass.
+function originGuard(allowedOrigins) {
+  return (req, res, next) => {
+    const origin = req.headers.origin;
+    if (
+      SAFE_METHODS.has(req.method) ||
+      origin === undefined ||
+      allowedOrigins.includes(origin)
+    ) {
+      return next();
+    }
+    return res.status(403).json({
+      error: {
+        code: "forbidden_origin",
+        message: "Request origin is not allowed",
+      },
+    });
+  };
+}
+
+function badRequest(res, fields) {
+  return res.status(400).json({
+    error: { code: "invalid_input", message: "Invalid input", fields },
+  });
+}
+
 export function createApp(
   db,
   {
@@ -50,15 +106,27 @@ export function createApp(
     sessionSecret,
     secureCookies = false,
     logger = createLogger({ level: "silent" }),
+    rateLimits = {},
+    allowedOrigins = [],
   } = {},
 ) {
   if (!sessionSecret) throw new Error("sessionSecret is required");
+
+  const limits = {
+    login: { ...DEFAULT_RATE_LIMITS.login, ...rateLimits.login },
+    register: { ...DEFAULT_RATE_LIMITS.register, ...rateLimits.register },
+  };
+  const loginLimiter = makeLimiter(limits.login, {
+    skipSuccessfulRequests: true,
+  });
+  const registerLimiter = makeLimiter(limits.register);
 
   // Checked against when the username does not exist, so that path costs the
   // same time as a real password check.
   const dummyHash = bcrypt.hashSync("not-a-real-password", bcryptCost);
 
   const app = express();
+  app.use(helmet());
   app.use(
     pinoHttp({
       logger,
@@ -82,6 +150,18 @@ export function createApp(
       customProps: (req) => ({ userId: req.session?.userId }),
     }),
   );
+
+  app.use(
+    cors({
+      origin: allowedOrigins, // an exact-match list; no wildcard
+      credentials: true, // allow the session cookie to travel
+      methods: ["GET", "POST", "PUT", "DELETE"],
+      allowedHeaders: ["Content-Type"],
+      exposedHeaders: ["X-Request-Id"], // so front-end code can read it
+      maxAge: 600, // browsers may cache the preflight answer for 10 minutes
+    }),
+  );
+  app.use(originGuard(allowedOrigins));
 
   // Before the session middleware, so polling never creates a session.
   app.get("/health", (req, res) => {
@@ -117,19 +197,10 @@ export function createApp(
     next();
   }
 
-  app.post("/api/register", async (req, res) => {
-    const { username, password } = req.body ?? {};
-
-    const errors = validateCredentials({ username, password });
-    if (Object.keys(errors).length > 0) {
-      return res.status(400).json({
-        error: {
-          code: "invalid_input",
-          message: "Invalid input",
-          fields: errors,
-        },
-      });
-    }
+  app.post("/api/register", registerLimiter, async (req, res) => {
+    const parsed = parseCredentials(req.body);
+    if (parsed.fields) return badRequest(res, parsed.fields);
+    const { username, password } = parsed.data;
 
     const hash = await bcrypt.hash(password, bcryptCost);
 
@@ -146,23 +217,10 @@ export function createApp(
     }
   });
 
-  app.post("/api/login", async (req, res) => {
-    const { username, password } = req.body ?? {};
-
-    // Only a shape check here. Password rules apply when choosing one, not when using it.
-    if (
-      typeof username !== "string" ||
-      typeof password !== "string" ||
-      username.length > 50 ||
-      password.length > 200
-    ) {
-      return res.status(400).json({
-        error: {
-          code: "invalid_input",
-          message: "Username and password are required",
-        },
-      });
-    }
+  app.post("/api/login", loginLimiter, async (req, res) => {
+    const parsed = parseLogin(req.body);
+    if (parsed.fields) return badRequest(res, parsed.fields);
+    const { username, password } = parsed.data;
 
     const user = findUserByUsername(db, username);
     // Always run one bcrypt comparison, whether or not the user exists.
@@ -192,18 +250,9 @@ export function createApp(
   });
 
   app.post("/api/characters", requireAuth, (req, res) => {
-    const { name, class: characterClass } = req.body ?? {};
-
-    const errors = validateNewCharacter({ name, class: characterClass });
-    if (Object.keys(errors).length > 0) {
-      return res.status(400).json({
-        error: {
-          code: "invalid_input",
-          message: "Invalid input",
-          fields: errors,
-        },
-      });
-    }
+    const parsed = parseNewCharacter(req.body);
+    if (parsed.fields) return badRequest(res, parsed.fields);
+    const { name, class: characterClass } = parsed.data;
 
     try {
       const character = createCharacter(db, req.user.id, name, characterClass);
@@ -234,20 +283,12 @@ export function createApp(
     const NOT_FOUND = {
       error: { code: "not_found", message: "Character not found" },
     };
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id < 1) return res.status(404).json(NOT_FOUND);
+    const id = parseId(req.params.id);
+    if (id === null) return res.status(404).json(NOT_FOUND);
 
-    const { x, y } = req.body ?? {};
-    const errors = validatePosition({ x, y }, WORLD);
-    if (Object.keys(errors).length > 0) {
-      return res.status(400).json({
-        error: {
-          code: "invalid_input",
-          message: "Invalid input",
-          fields: errors,
-        },
-      });
-    }
+    const parsed = parsePosition(req.body, WORLD);
+    if (parsed.fields) return badRequest(res, parsed.fields);
+    const { x, y } = parsed.data;
 
     // Same answer whether the character is missing or belongs to someone else.
     if (!updatePosition(db, req.user.id, id, x, y)) {

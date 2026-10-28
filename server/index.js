@@ -17,6 +17,7 @@ const app = createApp(openDb(config.dbPath), {
   sessionSecret,
   secureCookies: config.secureCookies,
   logger,
+  allowedOrigins: config.allowedOrigins,
 });
 
 app.listen(config.port, config.host, () => {

@@ -3,6 +3,8 @@ import { openDb } from "./db.js";
 import { createApp } from "./app.js";
 import { createLogger } from "./logger.js";
 
+export const TEST_ORIGIN = "http://localhost:3000";
+
 // A logger that collects each log line (parsed) in an array instead of printing it.
 export function createLogCapture() {
   const lines = [];
@@ -16,13 +18,14 @@ export function createLogCapture() {
 
 export const ALICE = { username: "alice", password: "correct-horse-battery" };
 
-// A fresh app with its own empty in-memory database.
-export function createTestApp({ logger } = {}) {
+export function createTestApp({ logger, ...options } = {}) {
   const db = openDb(":memory:");
   const app = createApp(db, {
     bcryptCost: 4,
     sessionSecret: "test-secret",
     logger,
+    allowedOrigins: [TEST_ORIGIN],
+    ...options,
   });
   return { app, db };
 }
