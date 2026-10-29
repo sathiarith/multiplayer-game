@@ -18,6 +18,7 @@ const app = createApp(openDb(config.dbPath), {
   secureCookies: config.secureCookies,
   logger,
   allowedOrigins: config.allowedOrigins,
+  docs: !config.production,
 });
 
 app.listen(config.port, config.host, () => {

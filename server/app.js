@@ -24,6 +24,7 @@ import { createLogger } from "./logger.js";
 import helmet from "helmet";
 import { rateLimit } from "express-rate-limit";
 import cors from "cors";
+import { createDocsRouter } from "./docs.js";
 
 export const COOKIE_NAME = "sid";
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -107,6 +108,7 @@ export function createApp(
     secureCookies = false,
     logger = createLogger({ level: "silent" }),
     rateLimits = {},
+    docs = false,
     allowedOrigins = [],
   } = {},
 ) {
@@ -141,7 +143,10 @@ export function createApp(
         res.setHeader("X-Request-Id", id);
         return id;
       },
-      autoLogging: { ignore: (req) => req.url === "/health" },
+      autoLogging: {
+        ignore: (req) =>
+          req.url === "/health" || req.url.startsWith("/api/docs"),
+      },
       customLogLevel: (req, res, err) => {
         if (err || res.statusCode >= 500) return "error";
         if (res.statusCode >= 400) return "warn";
@@ -161,7 +166,11 @@ export function createApp(
       maxAge: 600, // browsers may cache the preflight answer for 10 minutes
     }),
   );
+
   app.use(originGuard(allowedOrigins));
+
+  // Development only: the interactive API documentation.
+  if (docs) app.use("/api/docs", createDocsRouter());
 
   // Before the session middleware, so polling never creates a session.
   app.get("/health", (req, res) => {
