@@ -197,6 +197,8 @@ Handled:
   passes the error on if a response has already started.
 - Configuration errors stop the server at startup, and `/health` returns 503
   when the database is unusable.
+- The interactive API documentation (`/api/docs`) is only mounted outside
+  production, and it has its own Content-Security-Policy.
 
 Evidence: `errors.test.js`, `logging.test.js`, and the database-failure tests
 in `app.test.js` and `characters.api.test.js`.

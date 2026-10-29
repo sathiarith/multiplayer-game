@@ -1,0 +1,501 @@
+openapi: 3.0.3
+info:
+  title: Multiplayer Game API
+  version: 0.3.0
+  description: |
+    REST API for accounts and characters.
+
+    - Authentication is a session cookie named `sid`, set by `POST /api/login`.
+    - Every response carries an `X-Request-Id` header. Quote it when reporting a problem.
+    - Every error uses the same JSON shape (see the `Error` schema).
+    - A path that does not exist gets a 404 with `error.code` `not_found` and the message "Route not found".
+    - A state-changing request sent by a browser page from an origin that is not on the server allowlist gets a 403 (`forbidden_origin`).
+servers:
+  - url: /
+    description: The server this page was loaded from
+tags:
+  - name: Health
+    description: Used by monitors and container platforms.
+  - name: Accounts
+    description: Registration, login and logout.
+  - name: Characters
+    description: Characters belong to the logged-in account.
+security:
+  - cookieAuth: []
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Check that the server and database are working
+      description: Not authenticated, not rate limited, and not written to the request log.
+      security: []
+      responses:
+        "200":
+          description: The server is running and can reach the database.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthOk"
+        "503":
+          description: The database cannot be reached.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthUnavailable"
+
+  /api/register:
+    post:
+      tags: [Accounts]
+      summary: Create an account
+      description: Limited to 10 requests per 15 minutes per IP address.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Credentials"
+            example:
+              username: alice
+              password: correct-horse-battery
+      responses:
+        "201":
+          description: The account was created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/ForbiddenOrigin"
+        "409":
+          description: The username is taken (ignoring upper and lower case).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error:
+                  code: username_taken
+                  message: That username is taken
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/login:
+    post:
+      tags: [Accounts]
+      summary: Log in
+      description: |
+        Starts a session. An unknown username and a wrong password get the same
+        response. Only failed attempts count toward the limit of 10 per
+        15 minutes per IP address.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+            example:
+              username: alice
+              password: correct-horse-battery
+      responses:
+        "200":
+          description: Logged in. The session cookie is in the Set-Cookie header.
+          headers:
+            Set-Cookie:
+              description: The `sid` session cookie (HttpOnly, SameSite=Lax, and Secure in production).
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: Invalid username or password.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error:
+                  code: invalid_credentials
+                  message: Invalid username or password
+        "403":
+          $ref: "#/components/responses/ForbiddenOrigin"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/logout:
+    post:
+      tags: [Accounts]
+      summary: Log out
+      description: Destroys the server-side session and clears the cookie. It succeeds even if no session exists.
+      security: []
+      responses:
+        "204":
+          description: The session is gone.
+        "403":
+          $ref: "#/components/responses/ForbiddenOrigin"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/me:
+    get:
+      tags: [Accounts]
+      summary: Get the logged-in user
+      responses:
+        "200":
+          description: The current user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/NotAuthenticated"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/characters:
+    get:
+      tags: [Characters]
+      summary: List my characters
+      description: Only the logged-in user's characters are returned, oldest first.
+      responses:
+        "200":
+          description: Zero to three characters.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Character"
+        "401":
+          $ref: "#/components/responses/NotAuthenticated"
+        "500":
+          $ref: "#/components/responses/ServerError"
+    post:
+      tags: [Characters]
+      summary: Create a character
+      description: A new character starts at the spawn point with level 1 and 100 HP. A user can have at most 3.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewCharacter"
+            example:
+              name: Aria
+      responses:
+        "201":
+          description: The new character.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Character"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NotAuthenticated"
+        "403":
+          $ref: "#/components/responses/ForbiddenOrigin"
+        "409":
+          description: The user already has 3 characters (`character_limit`), or the name is taken by any user (`name_taken`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error:
+                  code: character_limit
+                  message: You can have at most 3 characters
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/characters/{id}/position:
+    put:
+      tags: [Characters]
+      summary: Save a character's position
+      description: |
+        Temporary. The client reports where its character is, and the server
+        only checks the range. This endpoint is removed in Sprint 5, when the
+        server becomes authoritative for movement.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Plain digits only. Anything else, such as 1e2, 0x10 or 007, is answered with 404.
+          schema:
+            type: integer
+            minimum: 1
+          example: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Position"
+            example:
+              x: 300
+              y: 200
+      responses:
+        "200":
+          description: The position was saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PositionSaved"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NotAuthenticated"
+        "403":
+          $ref: "#/components/responses/ForbiddenOrigin"
+        "404":
+          description: There is no such character, or it belongs to someone else. The two cases are deliberately identical.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error:
+                  code: not_found
+                  message: Character not found
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: sid
+      description: Session cookie set by POST /api/login. In this page it is sent automatically once you have logged in here.
+
+  schemas:
+    Credentials:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          pattern: "^[A-Za-z0-9_]{3,20}$"
+          description: 3 to 20 letters, numbers or underscores.
+        password:
+          type: string
+          format: password
+          minLength: 10
+          maxLength: 72
+          description: At least 10 characters and at most 72 bytes (the bcrypt limit), so multi-byte characters count more.
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          minLength: 1
+          maxLength: 50
+        password:
+          type: string
+          format: password
+          minLength: 1
+          maxLength: 200
+    User:
+      type: object
+      required: [id, username]
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+    NewCharacter:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          pattern: "^[A-Za-z0-9_]{3,16}$"
+          description: 3 to 16 letters, numbers or underscores. Unique across all users, ignoring case.
+        class:
+          type: string
+          enum: [warrior]
+          default: warrior
+    Character:
+      type: object
+      required: [id, name, class, level, hp, x, y]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        class:
+          type: string
+          enum: [warrior]
+        level:
+          type: integer
+        hp:
+          type: integer
+        x:
+          type: number
+        y:
+          type: number
+    Position:
+      type: object
+      additionalProperties: false
+      required: [x, y]
+      properties:
+        x:
+          type: number
+          minimum: 0
+          maximum: 800
+        y:
+          type: number
+          minimum: 0
+          maximum: 600
+    PositionSaved:
+      type: object
+      required: [id, x, y]
+      properties:
+        id:
+          type: integer
+        x:
+          type: number
+        y:
+          type: number
+    HealthOk:
+      type: object
+      required: [status, uptime]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        uptime:
+          type: integer
+          description: Seconds since the server started.
+    HealthUnavailable:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [unavailable]
+    ErrorCode:
+      type: string
+      enum:
+        - invalid_input
+        - invalid_json
+        - payload_too_large
+        - not_authenticated
+        - invalid_credentials
+        - not_found
+        - username_taken
+        - name_taken
+        - character_limit
+        - rate_limited
+        - forbidden_origin
+        - internal_error
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              $ref: "#/components/schemas/ErrorCode"
+            message:
+              type: string
+            fields:
+              type: object
+              description: Present on `invalid_input`. Maps each bad field to a short explanation.
+              additionalProperties:
+                type: string
+
+  responses:
+    BadRequest:
+      description: The body failed validation (`invalid_input`, with `fields`), or it is not valid JSON (`invalid_json`). Unknown fields are rejected.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: invalid_input
+              message: Invalid input
+              fields:
+                username: "3 to 20 characters: letters, numbers, underscore"
+    NotAuthenticated:
+      description: There is no valid session. Log in first.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: not_authenticated
+              message: Please log in
+    ForbiddenOrigin:
+      description: A browser page from an origin that is not on the allowlist sent this request.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: forbidden_origin
+              message: Request origin is not allowed
+    PayloadTooLarge:
+      description: The request body is larger than 10 kB.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: payload_too_large
+              message: Request body is too large
+    RateLimited:
+      description: Too many attempts. Wait for the number of seconds in Retry-After.
+      headers:
+        Retry-After:
+          description: Seconds until another attempt is allowed.
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: rate_limited
+              message: Too many attempts, please try again later
+    ServerError:
+      description: Something went wrong on the server. The details are only in the server log, searchable by X-Request-Id.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: internal_error
+              message: Something went wrong
