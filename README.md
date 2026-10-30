@@ -26,4 +26,10 @@ JavaScript, HTML/CSS, React, Node/Express, SQL, WebSockets, Redis, Docker, and C
 ## Art assets
 
 The sprite sheets are not included. See [CREDITS.md](CREDITS.md) for where
-to download them and which files go in `client/assets/`.
+to download them and which files go in `client/public/sprites/`.
+
+## Running locally
+
+1. In `server/`: copy `.env.example` to `.env`, then `npm install` and `npm run dev`.
+2. In `client/`: `npm install` and `npm run dev`.
+3. Open http://127.0.0.1:5173.
