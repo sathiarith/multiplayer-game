@@ -1,0 +1,33 @@
+.hud {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  display: flex; /* lay children out in a row */
+  align-items: center; /* center them vertically */
+  gap: 12px;
+  color: #f1f5f9;
+  font-size: 14px;
+  text-shadow: 0 1px 2px #000;
+  pointer-events: none; /* clicks pass through to the canvas */
+  user-select: none;
+}
+
+.hud__bar {
+  width: 140px;
+  height: 12px;
+  background: #0f172a;
+  border: 1px solid #475569;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.hud__fill {
+  height: 100%;
+  background: #ef4444;
+  transition: width 0.15s ease-out;
+}
+
+.hud__pos {
+  margin-left: auto; /* pushes this item to the far right */
+}

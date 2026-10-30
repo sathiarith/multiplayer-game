@@ -8,5 +8,6 @@ export default defineConfig({
     port: 5173,
     strictPort: true, // fail instead of silently picking another port
     proxy: { "/api": "http://127.0.0.1:3001" },
+    fs: { allow: [".."] }, // the game imports its rules from ../shared
   },
 });

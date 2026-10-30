@@ -7,4 +7,4 @@ dist/
 server/data/
 coverage/
 # Third-party art: license forbids redistribution, see CREDITS.md
-client/assets/*.png
+client/public/sprites/*.png

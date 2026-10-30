@@ -1,5 +1,6 @@
 import { Link, Navigate } from "react-router";
 import { useSelectedCharacter } from "../selection.jsx";
+import GameCanvas from "../components/GameCanvas.jsx";
 
 export default function Play() {
   const { selected } = useSelectedCharacter();
@@ -9,13 +10,14 @@ export default function Play() {
 
   return (
     <>
-      <h1 className="h3">Playing as {selected.name}</h1>
-      <p className="text-body-secondary">
-        Level {selected.level} {selected.class} · {selected.hp} HP · at (
-        {Math.round(selected.x)}, {Math.round(selected.y)}). The game canvas
-        arrives in Story 4.3.
+      <div className="d-flex justify-content-between align-items-center mb-3">
+        <h1 className="h4 mb-0">Playing as {selected.name}</h1>
+        <Link to="/characters">Back to characters</Link>
+      </div>
+      <GameCanvas character={selected} />
+      <p className="text-body-secondary mt-2 mb-0">
+        Move with the arrow keys or WASD.
       </p>
-      <Link to="/characters">Back to characters</Link>
     </>
   );
 }

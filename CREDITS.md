@@ -18,4 +18,4 @@ Character sprites are from **Tiny Swords** by Pixel Frog.
 
 The license forbids redistributing the assets, so the image files are excluded
 through `.gitignore`. To run the game, download the pack from the link above
-and copy the files listed here into `client/assets/`.
+and copy the files listed here into `client/public/sprites/`.
