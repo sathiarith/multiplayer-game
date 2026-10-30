@@ -70,3 +70,6 @@ export const login = (credentials) =>
   request("POST", "/api/login", credentials);
 export const logout = () => request("POST", "/api/logout");
 export const me = () => request("GET", "/api/me");
+export const listCharacters = () => request("GET", "/api/characters");
+export const createCharacter = (input) =>
+  request("POST", "/api/characters", input);

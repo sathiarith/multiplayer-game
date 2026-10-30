@@ -1,5 +1,11 @@
 import { test, expect, vi, afterEach } from "vitest";
-import { login, logout, ApiError } from "./api.js";
+import {
+  login,
+  logout,
+  ApiError,
+  listCharacters,
+  createCharacter,
+} from "./api.js";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -101,4 +107,38 @@ test("a 500 with our JSON error shape keeps its own code", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(500, body)));
   const err = await logout().catch((e) => e);
   expect(err.code).toBe("internal_error");
+});
+
+test("listCharacters reads the array with a GET", async () => {
+  const list = [{ id: 1, name: "Aria" }];
+  const fetchMock = vi.fn().mockResolvedValue(json(200, list));
+  vi.stubGlobal("fetch", fetchMock);
+
+  expect(await listCharacters()).toEqual(list);
+  const [url, options] = fetchMock.mock.calls[0];
+  expect(url).toBe("/api/characters");
+  expect(options.method).toBe("GET");
+});
+
+test("createCharacter posts only the fields it is given", async () => {
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValue(json(201, { id: 2, name: "Aria" }));
+  vi.stubGlobal("fetch", fetchMock);
+
+  await createCharacter({ name: "Aria" });
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ name: "Aria" });
+});
+
+test("a 409 when creating a character keeps its code", async () => {
+  const body = {
+    error: {
+      code: "character_limit",
+      message: "You can have at most 3 characters",
+    },
+  };
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(409, body)));
+
+  const err = await createCharacter({ name: "Aria" }).catch((e) => e);
+  expect(err).toMatchObject({ status: 409, code: "character_limit" });
 });
