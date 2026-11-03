@@ -182,22 +182,23 @@ export function createApp(
       res.status(503).json({ status: "unavailable" });
     }
   });
-  app.use(express.json({ limit: "10kb" }));
-  app.use(
-    session({
-      name: COOKIE_NAME,
-      secret: sessionSecret,
-      resave: false,
-      saveUninitialized: false, // no cookie until we actually log someone in
-      cookie: {
-        httpOnly: true,
-        sameSite: "lax",
-        secure: secureCookies,
-        maxAge: WEEK_MS,
-      },
-    }),
-  );
 
+  app.use(express.json({ limit: "10kb" }));
+  const sessionMiddleware = session({
+    name: COOKIE_NAME,
+    secret: sessionSecret,
+    resave: false,
+    saveUninitialized: false, // no cookie until we actually log someone in
+    cookie: {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: secureCookies,
+      maxAge: WEEK_MS,
+    },
+  });
+
+  app.use(sessionMiddleware);
+  app.locals.sessionMiddleware = sessionMiddleware; // shared with the WebSocket server
   // Runs before a route: lets logged-in users through, answers 401 otherwise.
   function requireAuth(req, res, next) {
     const user = req.session.userId && findUserById(db, req.session.userId);
@@ -245,7 +246,9 @@ export function createApp(
   });
 
   app.post("/api/logout", async (req, res) => {
+    const sessionId = req.sessionID; // read it before the session is destroyed
     await destroy(req); // deletes the server-side record
+    app.locals.onSessionEnded?.(sessionId); // drops this session's game connections
     res.clearCookie(COOKIE_NAME); // and tells the browser to drop the cookie
     return res.status(204).end();
   });

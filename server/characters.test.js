@@ -8,6 +8,7 @@ import {
   CharacterLimitError,
   MAX_CHARACTERS,
   SPAWN,
+  findCharacter,
 } from "./characters.js";
 
 let db;
@@ -79,4 +80,14 @@ test("SQL in a character name is stored as data, never executed", () => {
   const evil = "x'); DROP TABLE characters;--";
   createCharacter(db, alice.id, evil);
   expect(listCharacters(db, alice.id)[0].name).toBe(evil);
+});
+
+test("findCharacter only finds the owner's character", () => {
+  const c = createCharacter(db, alice.id, "Aria");
+  expect(findCharacter(db, alice.id, c.id)).toMatchObject({
+    id: c.id,
+    name: "Aria",
+  });
+  expect(findCharacter(db, bob.id, c.id)).toBeUndefined();
+  expect(findCharacter(db, alice.id, 99999)).toBeUndefined();
 });
