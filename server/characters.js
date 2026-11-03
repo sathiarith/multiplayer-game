@@ -42,3 +42,10 @@ export function updatePosition(db, userId, characterId, x, y) {
     .run(x, y, characterId, userId);
   return info.changes === 1;
 }
+
+// The character if it exists AND belongs to this user, otherwise undefined.
+export function findCharacter(db, userId, characterId) {
+  return db
+    .prepare(`SELECT ${COLUMNS} FROM characters WHERE id = ? AND user_id = ?`)
+    .get(characterId, userId);
+}

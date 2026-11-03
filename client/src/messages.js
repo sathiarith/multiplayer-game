@@ -33,3 +33,41 @@ export function describeError(err) {
         : "Something went wrong. Please try again.";
   }
 }
+
+const REFUSALS = {
+  not_authenticated: "Your session has ended. Please log in again.",
+  not_found: "This character could not be found.",
+  internal_error: "The server could not start your game session.",
+};
+
+// What to show for a connection state, or null when there is nothing to show.
+export function describeConnection(state) {
+  switch (state?.status) {
+    case "connecting":
+      return { tone: "secondary", text: "Connecting…" };
+    case "connected":
+      return { tone: "success", text: "Connected" };
+    case "reconnecting":
+      return { tone: "warning", text: "Connection lost. Trying to reconnect…" };
+    case "replaced":
+      return {
+        tone: "warning",
+        text: "This character was opened in another window, so this one was disconnected.",
+        retryLabel: "Play here",
+      };
+    case "ended":
+      return {
+        tone: "secondary",
+        text: "You were disconnected from the game. This happens when you log out.",
+        retryLabel: "Reconnect",
+      };
+    case "refused":
+      return {
+        tone: "danger",
+        text: REFUSALS[state.code] ?? "The server refused the connection.",
+        retryLabel: state.code === "internal_error" ? "Try again" : undefined,
+      };
+    default:
+      return null;
+  }
+}
