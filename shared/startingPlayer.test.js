@@ -1,5 +1,5 @@
 import { test, expect } from "vitest";
-import { buildLevel } from "../../../shared/map.js";
+import { buildLevel } from "./map.js";
 import { createStartingPlayer } from "./startingPlayer.js";
 
 const level = buildLevel({

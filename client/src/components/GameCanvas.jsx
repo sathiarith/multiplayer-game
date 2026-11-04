@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { createGame } from "../game/engine.js";
-import { loadLevel, loadSheets } from "../game/assets.js";
-import { createStartingPlayer } from "../game/startingPlayer.js";
+import { loadSheets } from "../game/assets.js";
+import { level } from "../game/level.js";
+import { createStartingPlayer } from "../../../shared/startingPlayer.js";
 import Hud from "./Hud.jsx";
 import "./GameCanvas.css";
 
@@ -16,10 +17,7 @@ export default function GameCanvas({ character }) {
 
     async function start() {
       try {
-        const [level, sheets] = await Promise.all([
-          loadLevel("/maps/level1.json", controller.signal),
-          loadSheets(),
-        ]);
+        const sheets = await loadSheets();
         if (controller.signal.aborted) return; // left the page while loading
 
         game = createGame({

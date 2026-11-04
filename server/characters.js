@@ -1,8 +1,15 @@
 export const MAX_CHARACTERS = 3;
-export const SPAWN = { x: 100, y: 60 }; // center of the spawn tile in level1.json
-export const WORLD = { width: 800, height: 600 };
-
+// Derived from the shared map, so the server and the client cannot disagree.
+export const SPAWN = {
+  x: (level.spawn.col + 0.5) * level.tileSize,
+  y: (level.spawn.row + 0.5) * level.tileSize,
+};
+export const WORLD = {
+  width: level.tiles[0].length * level.tileSize,
+  height: level.tiles.length * level.tileSize,
+};
 export class CharacterLimitError extends Error {}
+import { level } from "./level.js";
 
 // pos_x AS x renames the column in the result, so the API says x and y.
 const COLUMNS = "id, name, class, level, hp, pos_x AS x, pos_y AS y";
