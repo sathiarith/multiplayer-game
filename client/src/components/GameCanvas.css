@@ -11,3 +11,9 @@
   max-width: 100%;
   height: auto;
 }
+
+/* No live connection: show the last frame, greyed out. */
+.game--inactive canvas {
+  opacity: 0.5;
+  filter: grayscale(1);
+}

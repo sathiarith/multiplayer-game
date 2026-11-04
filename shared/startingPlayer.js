@@ -1,5 +1,5 @@
-import { createPlayer } from "../../../shared/game.js";
-import { canMoveTo } from "../../../shared/map.js";
+import { createPlayer } from "./game.js";
+import { canMoveTo } from "./map.js";
 
 // Builds the player from a saved character. If the saved position is missing
 // or not walkable (the map may have changed), start at the spawn point.
