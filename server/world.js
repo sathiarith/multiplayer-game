@@ -1,16 +1,11 @@
-import { updatePlayer } from "../shared/game.js";
 import { createStartingPlayer } from "../shared/startingPlayer.js";
+import { TICK_RATE, stepInput } from "../shared/prediction.js";
 
-export const TICK_RATE = 20; // simulation steps per second
+export { TICK_RATE }; // realtime.js and the tests import it from here
 export const STALE_AFTER_TICKS = TICK_RATE; // no input for one second releases every key
 
 const NO_INPUT = { up: false, down: false, left: false, right: false };
-const KEY_CODES = {
-  up: "ArrowUp",
-  down: "ArrowDown",
-  left: "ArrowLeft",
-  right: "ArrowRight",
-};
+
 const INPUT_FIELDS = ["seq", "up", "down", "left", "right"];
 
 // A valid input is exactly { seq, up, down, left, right }. Anything else is null.
@@ -29,15 +24,6 @@ export function parseInput(raw) {
   if (![up, down, left, right].every((v) => typeof v === "boolean"))
     return null;
   return { seq, up, down, left, right };
-}
-
-// The shared movement code understands key codes, so translate.
-function toKeys(input) {
-  return new Set(
-    Object.entries(KEY_CODES)
-      .filter(([name]) => input[name])
-      .map(([, code]) => code),
-  );
 }
 
 const round2 = (n) => Math.round(n * 100) / 100;
@@ -95,12 +81,7 @@ export function createWorld(level) {
       for (const player of players.values()) {
         const stale = tick - player.inputTick > STALE_AFTER_TICKS;
         const held = stale ? NO_INPUT : player.input;
-        player.state = updatePlayer(
-          player.state,
-          toKeys(held),
-          1 / TICK_RATE,
-          level,
-        );
+        player.state = stepInput(player.state, held, level, TICK_RATE);
       }
     },
 
