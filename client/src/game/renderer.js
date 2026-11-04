@@ -75,3 +75,31 @@ export function render(
   drawMap(ctx, level);
   drawPlayer(ctx, player, anim, sheets, showHitbox);
 }
+
+function drawName(ctx, player, isYou) {
+  ctx.font = "12px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.7)";
+  ctx.fillStyle = isYou ? "#4ade80" : "#f1f5f9";
+  const y = player.y - 36; // just above the head; adjust to match your sprite scale
+  ctx.strokeText(player.name, player.x, y);
+  ctx.fillText(player.name, player.x, y);
+}
+
+// Draws the map, then every player: [{ player: {id, name, x, y, size}, anim }].
+export function renderWorld(
+  ctx,
+  level,
+  entries,
+  sheets,
+  { youId, showHitbox = false } = {},
+) {
+  drawMap(ctx, level);
+  // Draw the ones lower on the screen later, so they overlap correctly.
+  const ordered = [...entries].sort((a, b) => a.player.y - b.player.y);
+  for (const { player, anim } of ordered) {
+    drawPlayer(ctx, player, anim, sheets, showHitbox);
+    drawName(ctx, player, player.id === youId);
+  }
+}

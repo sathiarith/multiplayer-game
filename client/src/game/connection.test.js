@@ -93,3 +93,41 @@ test("close removes every listener, closes the socket and silences later events"
   socket.emit("welcome", { character: { id: 7 } });
   expect(onChange.mock.calls.length).toBe(calls);
 });
+
+test("snapshots reach listeners until they unsubscribe", () => {
+  const { connection, socket } = start();
+  const seen = [];
+  const off = connection.onSnapshot((s) => seen.push(s.tick));
+
+  socket.emit("snapshot", { tick: 1, players: [] });
+  off();
+  socket.emit("snapshot", { tick: 2, players: [] });
+
+  expect(seen).toEqual([1]);
+});
+
+test("input is sent as a volatile 'input' event", () => {
+  const { connection, socket } = start();
+  const input = { seq: 1, up: false, down: false, left: false, right: true };
+  connection.sendInput(input);
+  expect(socket.volatile.emit).toHaveBeenCalledWith("input", input);
+});
+
+test("after close, nothing is sent and snapshots are ignored", () => {
+  const { connection, socket } = start();
+  const seen = vi.fn();
+  connection.onSnapshot(seen);
+
+  connection.close();
+  connection.sendInput({
+    seq: 1,
+    up: false,
+    down: false,
+    left: false,
+    right: true,
+  });
+  socket.emit("snapshot", { tick: 1, players: [] });
+
+  expect(socket.volatile.emit).not.toHaveBeenCalled();
+  expect(seen).not.toHaveBeenCalled();
+});

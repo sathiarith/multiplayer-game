@@ -72,3 +72,22 @@ test("StrictMode's extra start and stop leaves exactly one live connection", () 
   act(() => io.sockets[1].emit("welcome", welcome));
   expect(screen.getByText("connected")).toBeTruthy();
 });
+
+test("it exposes the live connection, and a new one after reconnect", () => {
+  const io = fakeIo();
+  const { result } = renderHook(() => useGameConnection(7, { io }));
+  const first = result.current.connection;
+  expect(typeof first.sendInput).toBe("function");
+  expect(typeof first.onSnapshot).toBe("function");
+
+  act(() => result.current.reconnect());
+
+  expect(result.current.connection).not.toBe(first);
+});
+
+test("with no character there is no connection", () => {
+  const { result } = renderHook(() =>
+    useGameConnection(undefined, { io: fakeIo() }),
+  );
+  expect(result.current.connection).toBeNull();
+});

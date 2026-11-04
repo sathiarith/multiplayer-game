@@ -2,16 +2,7 @@ import { updatePlayer } from "../../../shared/game.js";
 import { advanceAnim, createAnim } from "./animation.js";
 import { render } from "./renderer.js";
 import { hudSnapshot, sameHud } from "./hudState.js";
-
-// What the engine needs from the outside world. Tests pass fakes instead.
-function browserEnv() {
-  return {
-    raf: (cb) => window.requestAnimationFrame(cb),
-    caf: (id) => window.cancelAnimationFrame(id),
-    now: () => performance.now(),
-    target: window,
-  };
-}
+import { browserEnv } from "./env.js";
 
 export function createGame({
   canvas,
