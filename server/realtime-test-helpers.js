@@ -5,13 +5,14 @@ import { attachRealtime } from "./realtime.js";
 import { createCharacter } from "./characters.js";
 import { findUserByUsername } from "./users.js";
 
-export async function startRealtime() {
+export async function startRealtime({ tickMs = 10 } = {}) {
   const { app, db } = createTestApp();
   const httpServer = createServer(app);
   const io = attachRealtime(httpServer, {
     app,
     db,
     allowedOrigins: [TEST_ORIGIN],
+    tickMs,
   });
   await new Promise((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
   const url = `http://127.0.0.1:${httpServer.address().port}`;
