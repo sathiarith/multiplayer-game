@@ -6,9 +6,16 @@ import { fakeEnv, fakeCanvas } from "./fakeEnv.js";
 const level = buildLevel({
   tileSize: 40,
   spawn: { col: 1, row: 1 },
-  rows: ["#######", "#.....#", "#.....#", "#.....#", "#######"],
+  rows: [
+    "#".repeat(20),
+    `#${".".repeat(18)}#`,
+    `#${".".repeat(18)}#`,
+    `#${".".repeat(18)}#`,
+    "#".repeat(20),
+  ],
 });
 const sheets = { idle: { name: "idle" }, run: { name: "run" } };
+const idle = { up: false, down: false, left: false, right: false };
 
 // Plays the part of connectToGame: tests call push() to play the server.
 function fakeConnection() {
@@ -29,27 +36,30 @@ function fakeConnection() {
 }
 
 const snap = (tick, players) => ({ tick, players });
-const aria = (x = 100, y = 60, hp = 100) => ({
+const mine = (x = 100, ack = 0, hp = 100) => ({
   id: 1,
   name: "Aria",
   x,
-  y,
+  y: 100,
   hp,
   maxHp: 100,
-  ack: 0,
+  ack,
 });
-const borin = (x = 140) => ({
+const other = (x) => ({
   id: 2,
   name: "Borin",
   x,
-  y: 60,
+  y: 100,
   hp: 80,
   maxHp: 100,
   ack: 0,
 });
-const idle = { up: false, down: false, left: false, right: false };
+const drawnX = (ctx, name) =>
+  ctx.fillText.mock.calls.filter(([text]) => text === name).at(-1)[1];
+const sent = (connection) =>
+  connection.sendInput.mock.calls.map(([input]) => input);
 
-function setup(options = {}) {
+function setup() {
   const browser = fakeEnv();
   const connection = fakeConnection();
   const canvas = fakeCanvas();
@@ -62,25 +72,19 @@ function setup(options = {}) {
     you: 1,
     onHud,
     env: browser.env,
-    ...options,
   });
   return { browser, connection, canvas, ctx: canvas.ctx, onHud, game };
 }
 
-const sent = (connection) =>
-  connection.sendInput.mock.calls.map(([input]) => input);
-
-test("start runs one input timer and one frame loop, and stop undoes all of it", () => {
+test("start runs one frame loop and one subscription, and stop undoes all of it", () => {
   const { browser, connection, game } = setup();
   game.start();
   game.start(); // a second start does nothing
-  expect(browser.env.setInterval).toHaveBeenCalledTimes(1);
   expect(browser.pendingFrames()).toBe(1);
   expect(connection.listening).toBe(true);
   expect(browser.press("ArrowDown").defaultPrevented).toBe(true); // listening for keys
 
   game.stop();
-  expect(browser.pendingIntervals()).toBe(0);
   expect(browser.pendingFrames()).toBe(0);
   expect(connection.listening).toBe(false);
   expect(browser.press("ArrowDown").defaultPrevented).toBe(false); // no longer listening
@@ -91,7 +95,6 @@ test("a stopped game can be started again", () => {
   game.start();
   game.stop();
   game.start();
-  expect(browser.pendingIntervals()).toBe(1);
   expect(browser.pendingFrames()).toBe(1);
   expect(connection.listening).toBe(true);
 });
@@ -99,44 +102,67 @@ test("a stopped game can be started again", () => {
 test("the canvas is sized to the map", () => {
   const { canvas, game } = setup();
   game.start();
-  expect(canvas.width).toBe(280);
+  expect(canvas.width).toBe(800);
   expect(canvas.height).toBe(200);
 });
 
-test("with no keys held nothing is sent", () => {
-  const { browser, connection, game } = setup();
+test("nothing is drawn for me, and nothing is sent, until the server says where I am", () => {
+  const { browser, connection, ctx, game } = setup();
   game.start();
-  browser.tick();
-  browser.tick();
+  browser.press("KeyD");
+  browser.frame(50);
   expect(connection.sendInput).not.toHaveBeenCalled();
+  expect(ctx.fillText).not.toHaveBeenCalled();
 });
 
-test("a held key is sent on every tick with a rising sequence number, then released once", () => {
+test("my character appears where the server put it", () => {
+  const { browser, connection, ctx, game } = setup();
+  game.start();
+  connection.push(snap(1, [mine(100)]));
+  browser.frame(0);
+  expect(drawnX(ctx, "Aria")).toBeCloseTo(100);
+});
+
+test("my character moves as soon as I press a key, without waiting for the server", () => {
+  const { browser, connection, ctx, game } = setup();
+  game.start();
+  connection.push(snap(1, [mine(100)]));
+  browser.press("KeyD");
+
+  browser.frame(50); // one fixed step: the prediction goes from 100 to 110
+  browser.frame(25); // halfway through the next step
+  expect(drawnX(ctx, "Aria")).toBeCloseTo(105);
+  expect(sent(connection)).toEqual([{ seq: 1, ...idle, right: true }]);
+});
+
+test("a held key is sent on every step with a rising sequence number, then released once", () => {
   const { browser, connection, game } = setup();
   game.start();
+  connection.push(snap(1, [mine()]));
 
   browser.press("KeyD");
-  browser.tick();
-  browser.tick();
+  browser.frame(50);
+  browser.frame(50);
   expect(sent(connection)).toEqual([
     { seq: 1, ...idle, right: true },
     { seq: 2, ...idle, right: true },
   ]);
 
   browser.release("KeyD");
-  browser.tick();
+  browser.frame(50);
   expect(sent(connection).at(-1)).toEqual({ seq: 3, ...idle });
 
-  browser.tick(); // idle and unchanged: nothing more to say
+  browser.frame(50); // idle and unchanged: nothing more to say
   expect(connection.sendInput).toHaveBeenCalledTimes(3);
 });
 
 test("arrows and WASD are both understood", () => {
   const { browser, connection, game } = setup();
   game.start();
+  connection.push(snap(1, [mine()]));
   browser.press("ArrowUp");
   browser.press("KeyA");
-  browser.tick();
+  browser.frame(50);
   expect(sent(connection)[0]).toEqual({
     seq: 1,
     ...idle,
@@ -148,105 +174,110 @@ test("arrows and WASD are both understood", () => {
 test("losing window focus releases every key", () => {
   const { browser, connection, game } = setup();
   game.start();
+  connection.push(snap(1, [mine()]));
   browser.press("ArrowLeft");
-  browser.tick();
+  browser.frame(50);
 
   browser.blur();
-  browser.tick();
+  browser.frame(50);
 
   expect(sent(connection).at(-1)).toEqual({ seq: 2, ...idle });
 });
 
-test("before the first snapshot only the map is drawn", () => {
-  const { browser, ctx, game } = setup();
-  game.start();
-  browser.frame();
-  expect(ctx.fillRect).toHaveBeenCalled(); // the tiles
-  expect(ctx.fillText).not.toHaveBeenCalled(); // no names, no players
-});
-
-test("every player in the snapshot is drawn with a name above them", () => {
+test("the running animation shows while I move, and idle when I stop", () => {
   const { browser, connection, ctx, game } = setup();
   game.start();
+  connection.push(snap(1, [mine()]));
+  browser.frame(0);
+  expect(ctx.drawImage.mock.lastCall[0]).toBe(sheets.idle);
 
-  connection.push(snap(1, [aria(), borin()]));
-  browser.frame();
+  browser.press("KeyD");
+  browser.frame(50);
+  expect(ctx.drawImage.mock.lastCall[0]).toBe(sheets.run);
 
-  const names = ctx.fillText.mock.calls.map(([text]) => text).sort();
-  expect(names).toEqual(["Aria", "Borin"]);
-  expect(ctx.fillText).toHaveBeenCalledWith("Aria", 100, expect.any(Number));
+  browser.release("KeyD");
+  browser.frame(50);
+  expect(ctx.drawImage.mock.lastCall[0]).toBe(sheets.idle);
+});
+
+test("my character is drawn mirrored when I move left", () => {
+  const { browser, connection, ctx, game } = setup();
+  game.start();
+  connection.push(snap(1, [mine()]));
+  browser.press("KeyA");
+  browser.frame(50);
+  expect(ctx.scale).toHaveBeenLastCalledWith(-1, 1);
+});
+
+test("a snapshot that disagrees with my prediction does not make my character jump on screen", () => {
+  const { browser, connection, ctx, game } = setup();
+  game.start();
+  connection.push(snap(1, [mine(100)]));
+  browser.press("KeyD");
+  browser.frame(50);
+  browser.frame(50);
+  browser.frame(50); // three steps: predicted x = 130
+  browser.frame(25);
+  const before = drawnX(ctx, "Aria"); // between 120 and 130
+  expect(before).toBeCloseTo(125);
+
+  // The server never moved me, and says it has heard all three inputs.
+  connection.push(snap(2, [mine(100, 3)]));
+  browser.frame(1);
+
+  expect(Math.abs(drawnX(ctx, "Aria") - before)).toBeLessThan(3);
+});
+
+test("other players are drawn a little in the past, blended between two snapshots", () => {
+  const { browser, connection, ctx, game } = setup();
+  game.start();
+  connection.push(snap(1, [mine(), other(140)])); // arrives at time 0
+  browser.frame(50);
+  connection.push(snap(2, [mine(), other(150)])); // arrives at time 50
+
+  browser.frame(75); // time 125: drawn as of 25, halfway between the two
+  expect(drawnX(ctx, "Borin")).toBeCloseTo(145);
+
+  browser.frame(25); // time 150: drawn as of 50, exactly the second snapshot
+  expect(drawnX(ctx, "Borin")).toBeCloseTo(150);
 });
 
 test("a player who leaves the snapshot disappears", () => {
   const { browser, connection, ctx, game } = setup();
   game.start();
-  connection.push(snap(1, [aria(), borin()]));
-  browser.frame();
+  connection.push(snap(1, [mine(), other(140)]));
+  browser.frame(50);
+  connection.push(snap(2, [mine()]));
   ctx.fillText.mockClear();
 
-  connection.push(snap(2, [aria()]));
-  browser.frame();
+  browser.frame(150);
 
   expect(ctx.fillText.mock.calls.map(([text]) => text)).toEqual(["Aria"]);
 });
 
-test("the running animation shows while a player moves, and idle when they stop", () => {
-  const { browser, connection, ctx, game } = setup();
+test("the HUD follows my predicted character, and only when its values change", () => {
+  const { browser, connection, onHud, game } = setup();
   game.start();
-
-  connection.push(snap(1, [aria(100)]));
-  browser.frame();
-  expect(ctx.drawImage.mock.lastCall[0]).toBe(sheets.idle);
-
-  connection.push(snap(2, [aria(110)]));
-  browser.frame();
-  expect(ctx.drawImage.mock.lastCall[0]).toBe(sheets.run);
-  browser.frame(); // frames between snapshots keep running, no flicker
-  expect(ctx.drawImage.mock.lastCall[0]).toBe(sheets.run);
-
-  connection.push(snap(3, [aria(110)]));
-  browser.frame();
-  expect(ctx.drawImage.mock.lastCall[0]).toBe(sheets.idle);
-});
-
-test("a character moving left is drawn mirrored", () => {
-  const { browser, connection, ctx, game } = setup();
-  game.start();
-  connection.push(snap(1, [aria(100)]));
-  browser.frame();
-  connection.push(snap(2, [aria(90)]));
-  browser.frame();
-  expect(ctx.scale).toHaveBeenLastCalledWith(-1, 1);
-});
-
-test("the HUD follows the player's own character, and only when its values change", () => {
-  const { connection, onHud, game } = setup();
-  game.start();
-
-  connection.push(snap(1, [aria(100, 60), borin()]));
+  connection.push(snap(1, [mine(100)]));
   expect(onHud).toHaveBeenCalledTimes(1);
   expect(onHud.mock.lastCall[0]).toMatchObject({
     name: "Aria",
     hp: 100,
     col: 2,
-    row: 1,
+    row: 2,
   });
 
-  connection.push(snap(2, [aria(105, 60), borin(160)])); // same tile, someone else moved
+  browser.frame(50); // standing still: nothing changed
   expect(onHud).toHaveBeenCalledTimes(1);
 
-  connection.push(snap(3, [aria(130, 60), borin(160)])); // crossed into the next tile
+  browser.press("KeyD");
+  browser.frame(50); // x = 110: still the same tile
+  expect(onHud).toHaveBeenCalledTimes(1);
+  browser.frame(50); // x = 120: the next tile, with no help from the server
   expect(onHud).toHaveBeenCalledTimes(2);
   expect(onHud.mock.lastCall[0].col).toBe(3);
 
-  connection.push(snap(4, [aria(130, 60, 70), borin(160)])); // health changed
+  connection.push(snap(2, [mine(120, 2, 70)])); // the server says my health changed
   expect(onHud).toHaveBeenCalledTimes(3);
   expect(onHud.mock.lastCall[0].hp).toBe(70);
-});
-
-test("a snapshot that does not include this player leaves the HUD alone", () => {
-  const { connection, onHud, game } = setup();
-  game.start();
-  connection.push(snap(1, [borin()]));
-  expect(onHud).not.toHaveBeenCalled();
 });

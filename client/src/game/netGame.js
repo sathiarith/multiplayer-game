@@ -1,15 +1,23 @@
 import { PLAYER_SIZE } from "../../../shared/game.js";
+import { TICK_RATE } from "../../../shared/prediction.js";
 import { advanceAnim, createAnim } from "./animation.js";
 import { renderWorld } from "./renderer.js";
 import { hudSnapshot, sameHud } from "./hudState.js";
 import { inputFromKeys, sameInput, anyHeld } from "./input.js";
+import { createPredictor } from "./predictor.js";
+import {
+  createSnapshotBuffer,
+  INTERPOLATION_DELAY_MS,
+} from "./interpolation.js";
 import { browserEnv } from "./env.js";
 
 const IDLE = { up: false, down: false, left: false, right: false };
 const ORIGIN = { x: 0, y: 0 };
+const MAX_STEPS_PER_FRAME = 5;
 
-// The page does not simulate anything. It tells the server which keys are
-// held, remembers the latest snapshot, and draws it.
+// My own character is predicted in fixed steps (the same ones the server takes)
+// and corrected by the server. Everyone else is drawn slightly in the past,
+// blended between two snapshots. The server stays in charge of everything.
 export function createNetworkGame({
   canvas,
   level,
@@ -18,17 +26,21 @@ export function createNetworkGame({
   you, // this player's character id
   onHud,
   showHitbox = false,
-  tickRate = 20,
+  tickRate = TICK_RATE,
+  interpolationDelayMs = INTERPOLATION_DELAY_MS,
   env = browserEnv(),
 }) {
   const ctx = canvas.getContext("2d");
   const keys = new Set();
-  const view = new Map(); // player id -> { player, anim, move }
+  const stepSeconds = 1 / tickRate;
+  const buffer = createSnapshotBuffer();
+  const predictor = createPredictor({ level, tickRate });
+  const anims = new Map(); // player id -> animation state, for me and for the others
   let running = false;
   let frameId = null;
-  let intervalId = null;
   let unsubscribe = null;
   let lastFrame = 0;
+  let accumulator = 0; // time that has passed but not yet been simulated
   let seq = 0;
   let lastSent = IDLE;
   let lastHud = null;
@@ -41,39 +53,39 @@ export function createNetworkGame({
   const onKeyUp = (e) => keys.delete(e.code);
   const onBlur = () => keys.clear(); // avoid "stuck" keys
 
-  // Runs at the tick rate. Send when the held keys change, and keep sending
-  // while any key is held, because the server releases keys it stops hearing about.
-  function sendInput() {
+  // The HUD follows my predicted character, and is told only about changes.
+  function publishHud() {
+    const state = predictor.state();
+    if (!state) return;
+    const next = hudSnapshot(state, level);
+    if (lastHud && sameHud(lastHud, next)) return;
+    lastHud = next;
+    onHud?.(next);
+  }
+
+  // One fixed step. Send the held keys when they change, and keep sending
+  // while any key is held (the server releases keys it stops hearing about),
+  // and predict the result at once.
+  function fixedStep() {
+    if (!predictor.ready) return; // wait until the server has said where I am
     const input = inputFromKeys(keys);
-    if (sameInput(lastSent, input) && !anyHeld(input)) return;
-    lastSent = input;
-    connection.sendInput({ seq: ++seq, ...input });
+    if (!sameInput(lastSent, input) || anyHeld(input)) {
+      lastSent = input;
+      seq += 1;
+      connection.sendInput({ seq, ...input });
+      predictor.step(input, seq);
+    } else {
+      predictor.step(input); // idle and unchanged: nothing sent, nothing to replay
+    }
+    publishHud();
   }
 
   function onSnapshot({ players }) {
-    const seen = new Set();
-    for (const p of players) {
-      seen.add(p.id);
-      const before = view.get(p.id);
-      view.set(p.id, {
-        player: { ...p, size: PLAYER_SIZE },
-        anim: before ? before.anim : createAnim(),
-        // How far they moved since the previous snapshot. The animation uses
-        // this until the next snapshot, so it does not flicker between frames.
-        move: before
-          ? { x: p.x - before.player.x, y: p.y - before.player.y }
-          : ORIGIN,
-      });
-    }
-    for (const id of view.keys()) if (!seen.has(id)) view.delete(id);
-
+    buffer.push(env.now(), players);
     const mine = players.find((p) => p.id === you);
     if (mine) {
-      const next = hudSnapshot(mine, level);
-      if (!lastHud || !sameHud(lastHud, next)) {
-        lastHud = next;
-        onHud?.(next);
-      }
+      predictor.reconcile(mine);
+      publishHud();
     }
   }
 
@@ -82,14 +94,70 @@ export function createNetworkGame({
     const dt = Math.min((now - lastFrame) / 1000, 0.1);
     lastFrame = now;
 
-    for (const entry of view.values()) {
-      entry.anim = advanceAnim(entry.anim, ORIGIN, entry.move, dt);
+    accumulator += dt;
+    let steps = 0;
+    while (accumulator >= stepSeconds && steps < MAX_STEPS_PER_FRAME) {
+      fixedStep();
+      accumulator -= stepSeconds;
+      steps += 1;
     }
-    renderWorld(ctx, level, [...view.values()], sheets, {
-      youId: you,
-      showHitbox,
-    });
+    if (steps === MAX_STEPS_PER_FRAME) accumulator = 0; // after a long stall, do not try to catch up
+    predictor.decay(dt);
 
+    const entries = [];
+    const present = new Set();
+
+    // Everyone else: where they were a moment ago.
+    for (const p of buffer.sample(now - interpolationDelayMs)) {
+      if (p.id === you) continue;
+      present.add(p.id);
+      const anim = advanceAnim(
+        anims.get(p.id) ?? createAnim(),
+        ORIGIN,
+        p.move,
+        dt,
+      );
+      anims.set(p.id, anim);
+      entries.push({
+        player: {
+          id: p.id,
+          name: p.name,
+          x: p.x,
+          y: p.y,
+          hp: p.hp,
+          size: PLAYER_SIZE,
+        },
+        anim,
+      });
+    }
+
+    // Me: predicted, and drawn between my last two steps.
+    const state = predictor.state();
+    if (state) {
+      const at = predictor.position(accumulator / stepSeconds);
+      const anim = advanceAnim(
+        anims.get(you) ?? createAnim(),
+        ORIGIN,
+        predictor.lastMove(),
+        dt,
+      );
+      anims.set(you, anim);
+      present.add(you);
+      entries.push({
+        player: {
+          id: you,
+          name: state.name,
+          x: at.x,
+          y: at.y,
+          hp: state.hp,
+          size: state.size,
+        },
+        anim,
+      });
+    }
+    for (const id of anims.keys()) if (!present.has(id)) anims.delete(id);
+
+    renderWorld(ctx, level, entries, sheets, { youId: you, showHitbox });
     if (running) frameId = env.raf(frame);
   }
 
@@ -103,7 +171,6 @@ export function createNetworkGame({
       env.target.addEventListener("keyup", onKeyUp);
       env.target.addEventListener("blur", onBlur);
       unsubscribe = connection.onSnapshot(onSnapshot);
-      intervalId = env.setInterval(sendInput, 1000 / tickRate);
       lastFrame = env.now();
       frameId = env.raf(frame);
     },
@@ -114,7 +181,6 @@ export function createNetworkGame({
       running = false;
       unsubscribe?.();
       unsubscribe = null;
-      env.clearInterval(intervalId);
       if (frameId !== null) env.caf(frameId);
       frameId = null;
       env.target.removeEventListener("keydown", onKeyDown);
