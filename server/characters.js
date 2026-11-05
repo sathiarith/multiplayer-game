@@ -4,10 +4,6 @@ export const SPAWN = {
   x: (level.spawn.col + 0.5) * level.tileSize,
   y: (level.spawn.row + 0.5) * level.tileSize,
 };
-export const WORLD = {
-  width: level.tiles[0].length * level.tileSize,
-  height: level.tiles.length * level.tileSize,
-};
 export class CharacterLimitError extends Error {}
 import { level } from "./level.js";
 
@@ -40,13 +36,14 @@ export function createCharacter(db, userId, name, characterClass = "warrior") {
   return create();
 }
 
-// Returns true only if the character exists AND belongs to this user.
-export function updatePosition(db, userId, characterId, x, y) {
+// Saves what the server knows about a character. Returns true only if the
+// character exists AND belongs to this user.
+export function saveCharacterState(db, userId, characterId, { x, y, hp }) {
   const info = db
     .prepare(
-      "UPDATE characters SET pos_x = ?, pos_y = ? WHERE id = ? AND user_id = ?",
+      "UPDATE characters SET pos_x = ?, pos_y = ?, hp = ? WHERE id = ? AND user_id = ?",
     )
-    .run(x, y, characterId, userId);
+    .run(x, y, hp, characterId, userId);
   return info.changes === 1;
 }
 

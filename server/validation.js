@@ -50,14 +50,6 @@ const newCharacterSchema = z
   })
   .strict();
 
-const positionSchema = (world) =>
-  z
-    .object({
-      x: z.number().min(0).max(world.width),
-      y: z.number().min(0).max(world.height),
-    })
-    .strict();
-
 export function parseCredentials(body) {
   return check(
     credentialsSchema,
@@ -86,17 +78,6 @@ export function parseNewCharacter(body) {
     {
       name: "3 to 16 characters: letters, numbers, underscore",
       class: `one of: ${CHARACTER_CLASSES.join(", ")}`,
-    },
-    body,
-  );
-}
-
-export function parsePosition(body, world) {
-  return check(
-    positionSchema(world),
-    {
-      x: `a number from 0 to ${world.width}`,
-      y: `a number from 0 to ${world.height}`,
     },
     body,
   );

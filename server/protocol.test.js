@@ -48,4 +48,7 @@ test("the limits in the document match the code", () => {
     `${PROTOCOL.violations.max} in ${PROTOCOL.violations.windowMs / 1000} seconds`,
   );
   expect(row("Input released after")).toContain(`${STALE_AFTER_TICKS} ticks`);
+  expect(row("Progress saved")).toContain(
+    `every ${PROTOCOL.saveEveryMs / 1000} seconds`,
+  );
 });

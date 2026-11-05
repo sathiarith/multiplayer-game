@@ -15,10 +15,6 @@ test("every character route requires login", async () => {
   expect(
     (await request(app).post("/api/characters").send({ name: "Aria" })).status,
   ).toBe(401);
-  const put = await request(app)
-    .put("/api/characters/1/position")
-    .send({ x: 1, y: 1 });
-  expect(put.status).toBe(401);
 });
 
 test("create a character, then list it", async () => {
@@ -86,65 +82,6 @@ test("users only see their own characters", async () => {
   ]);
 });
 
-test("the owner can save a position", async () => {
-  const agent = await loggedInAgent(app, "alice");
-  const { body: ch } = await agent
-    .post("/api/characters")
-    .send({ name: "Mover" });
-  const res = await agent
-    .put(`/api/characters/${ch.id}/position`)
-    .send({ x: 150.5, y: 200 });
-  expect(res.status).toBe(200);
-  const list = await agent.get("/api/characters");
-  expect(list.body[0]).toMatchObject({ x: 150.5, y: 200 });
-});
-
-test("another user's character cannot be changed, and looks like it does not exist", async () => {
-  const owner = await loggedInAgent(app, "alice");
-  const intruder = await loggedInAgent(app, "mallory");
-  const { body: ch } = await owner
-    .post("/api/characters")
-    .send({ name: "Guarded" });
-
-  const res = await intruder
-    .put(`/api/characters/${ch.id}/position`)
-    .send({ x: 5, y: 5 });
-  expect(res.status).toBe(404);
-
-  const list = await owner.get("/api/characters");
-  expect(list.body[0]).toMatchObject({ x: SPAWN.x, y: SPAWN.y }); // unchanged
-});
-
-test("bad positions are rejected with 400", async () => {
-  const agent = await loggedInAgent(app, "alice");
-  const { body: ch } = await agent
-    .post("/api/characters")
-    .send({ name: "BadPos" });
-  const bad = [
-    { x: "5", y: 5 },
-    { x: -1, y: 5 },
-    { x: 5, y: 601 },
-    { x: null, y: 5 },
-    {},
-  ];
-  for (const body of bad) {
-    const res = await agent.put(`/api/characters/${ch.id}/position`).send(body);
-    expect(res.status).toBe(400);
-  }
-});
-
-test("unknown or malformed character ids return 404", async () => {
-  const agent = await loggedInAgent(app, "alice");
-  expect(
-    (await agent.put("/api/characters/99999/position").send({ x: 1, y: 1 }))
-      .status,
-  ).toBe(404);
-  expect(
-    (await agent.put("/api/characters/abc/position").send({ x: 1, y: 1 }))
-      .status,
-  ).toBe(404);
-});
-
 test("an unexpected database failure creating a character returns a generic 500", async () => {
   const spy = vi.spyOn(console, "error").mockImplementation(() => {});
   const agent = await loggedInAgent(app, "alice");
@@ -158,11 +95,20 @@ test("an unexpected database failure creating a character returns a generic 500"
 test("character routes with no request body answer 400, not a crash", async () => {
   const agent = await loggedInAgent(app, "alice");
   expect((await agent.post("/api/characters")).status).toBe(400);
+});
 
+test("clients can no longer report their own position over REST", async () => {
+  const agent = await loggedInAgent(app, "alice");
   const { body: ch } = await agent
     .post("/api/characters")
-    .send({ name: "NoBody" });
-  expect((await agent.put(`/api/characters/${ch.id}/position`)).status).toBe(
-    400,
-  );
+    .send({ name: "Aria" });
+
+  const res = await agent
+    .put(`/api/characters/${ch.id}/position`)
+    .send({ x: 5, y: 5 });
+
+  expect(res.status).toBe(404);
+  expect(res.body.error.message).toBe("Route not found");
+  const list = await agent.get("/api/characters");
+  expect(list.body[0]).toMatchObject({ x: SPAWN.x, y: SPAWN.y });
 });

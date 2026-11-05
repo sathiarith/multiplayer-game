@@ -25,7 +25,8 @@ const app = createApp(db, {
 });
 
 const httpServer = createServer(app);
-attachRealtime(httpServer, {
+
+const io = attachRealtime(httpServer, {
   app,
   db,
   allowedOrigins: config.allowedOrigins,
@@ -35,3 +36,13 @@ attachRealtime(httpServer, {
 httpServer.listen(config.port, config.host, () => {
   logger.info({ host: config.host, port: config.port }, "API listening");
 });
+
+// Ctrl+C or a stop request: closing Socket.IO disconnects every player, and
+// each disconnect saves that player, so a clean stop loses no progress.
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.once(signal, () => {
+    logger.info({ signal }, "shutting down");
+    setTimeout(() => process.exit(1), 5000).unref(); // do not hang forever
+    io.close(() => process.exit(0));
+  });
+}

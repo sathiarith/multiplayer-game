@@ -226,60 +226,6 @@ paths:
         "500":
           $ref: "#/components/responses/ServerError"
 
-  /api/characters/{id}/position:
-    put:
-      tags: [Characters]
-      summary: Save a character's position
-      description: |
-        Temporary. The client reports where its character is, and the server
-        only checks the range. This endpoint is removed in Sprint 5, when the
-        server becomes authoritative for movement.
-      parameters:
-        - name: id
-          in: path
-          required: true
-          description: Plain digits only. Anything else, such as 1e2, 0x10 or 007, is answered with 404.
-          schema:
-            type: integer
-            minimum: 1
-          example: 1
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/Position"
-            example:
-              x: 300
-              y: 200
-      responses:
-        "200":
-          description: The position was saved.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PositionSaved"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/NotAuthenticated"
-        "403":
-          $ref: "#/components/responses/ForbiddenOrigin"
-        "404":
-          description: There is no such character, or it belongs to someone else. The two cases are deliberately identical.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-              example:
-                error:
-                  code: not_found
-                  message: Character not found
-        "413":
-          $ref: "#/components/responses/PayloadTooLarge"
-        "500":
-          $ref: "#/components/responses/ServerError"
-
 components:
   securitySchemes:
     cookieAuth:
@@ -353,29 +299,6 @@ components:
         level:
           type: integer
         hp:
-          type: integer
-        x:
-          type: number
-        y:
-          type: number
-    Position:
-      type: object
-      additionalProperties: false
-      required: [x, y]
-      properties:
-        x:
-          type: number
-          minimum: 0
-          maximum: 800
-        y:
-          type: number
-          minimum: 0
-          maximum: 600
-    PositionSaved:
-      type: object
-      required: [id, x, y]
-      properties:
-        id:
           type: integer
         x:
           type: number

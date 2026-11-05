@@ -3,11 +3,9 @@ import {
   parseCredentials,
   parseLogin,
   parseNewCharacter,
-  parsePosition,
   parseId,
 } from "./validation.js";
 
-const WORLD = { width: 800, height: 600 };
 const ok = { username: "alice_01", password: "correct-horse-battery" };
 
 test("valid credentials parse unchanged", () => {
@@ -101,26 +99,6 @@ test("bad names and classes are rejected", () => {
   expect(
     parseNewCharacter({ name: "Aria", class: "wizard" }).fields.class,
   ).toBeDefined();
-});
-
-test("positions must be numbers inside the world", () => {
-  expect(parsePosition({ x: 150.5, y: 0 }, WORLD).data).toEqual({
-    x: 150.5,
-    y: 0,
-  });
-  expect(parsePosition({ x: 800, y: 600 }, WORLD).data).toBeDefined();
-  for (const body of [
-    { x: "5", y: 5 },
-    { x: -1, y: 5 },
-    { x: 5, y: 601 },
-    { x: null, y: 5 },
-    {},
-  ]) {
-    expect(parsePosition(body, WORLD).fields).toBeDefined();
-  }
-  expect(parsePosition({ x: 1, y: 1, z: 1 }, WORLD).fields.z).toBe(
-    "not allowed",
-  );
 });
 
 test("ids accept plain positive integers only", () => {

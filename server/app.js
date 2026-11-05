@@ -6,16 +6,12 @@ import {
   parseCredentials,
   parseLogin,
   parseNewCharacter,
-  parsePosition,
-  parseId,
 } from "./validation.js";
 import {
   listCharacters,
   createCharacter,
-  updatePosition,
   CharacterLimitError,
   MAX_CHARACTERS,
-  WORLD,
 } from "./characters.js";
 import { notFoundHandler, errorHandler } from "./errors.js";
 import crypto from "node:crypto";
@@ -288,25 +284,6 @@ export function createApp(
       }
       throw err;
     }
-  });
-
-  // Temporary: Sprint 5 replaces client-reported positions with server-owned ones.
-  app.put("/api/characters/:id/position", requireAuth, (req, res) => {
-    const NOT_FOUND = {
-      error: { code: "not_found", message: "Character not found" },
-    };
-    const id = parseId(req.params.id);
-    if (id === null) return res.status(404).json(NOT_FOUND);
-
-    const parsed = parsePosition(req.body, WORLD);
-    if (parsed.fields) return badRequest(res, parsed.fields);
-    const { x, y } = parsed.data;
-
-    // Same answer whether the character is missing or belongs to someone else.
-    if (!updatePosition(db, req.user.id, id, x, y)) {
-      return res.status(404).json(NOT_FOUND);
-    }
-    return res.json({ id, x, y });
   });
 
   app.use(notFoundHandler);

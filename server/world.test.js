@@ -194,3 +194,25 @@ test("a snapshot is compact, rounded, and carries the tick", () => {
   expect(Number(p.x.toFixed(2))).toBe(p.x);
   expect(Number(p.y.toFixed(2))).toBe(p.y);
 });
+
+test("get returns the exact saved fields, and nothing for an unknown player", () => {
+  const world = createWorld(room);
+  world.add(aria);
+  world.setInput(1, hold(1, { up: true, right: true }));
+  world.step();
+
+  const saved = world.get(1);
+  expect(saved.hp).toBe(100);
+  expect(saved.x).toBeCloseTo(107.0710678, 6);
+  expect(saved.x).not.toBe(107.07); // not rounded like the snapshot is
+  expect(world.get(99)).toBeUndefined();
+});
+
+test("ids lists everyone in the world", () => {
+  const world = createWorld(room);
+  world.add(aria);
+  world.add(borin);
+  expect(world.ids().sort()).toEqual([1, 2]);
+  world.remove(1);
+  expect(world.ids()).toEqual([2]);
+});

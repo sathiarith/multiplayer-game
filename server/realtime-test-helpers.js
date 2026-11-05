@@ -5,7 +5,12 @@ import { attachRealtime } from "./realtime.js";
 import { createCharacter } from "./characters.js";
 import { findUserByUsername } from "./users.js";
 
-export async function startRealtime({ tickMs = 10, guard } = {}) {
+export async function startRealtime({
+  tickMs = 10,
+  guard,
+  saveEveryMs = 60_000,
+  logger,
+} = {}) {
   const { app, db } = createTestApp();
   const httpServer = createServer(app);
   const io = attachRealtime(httpServer, {
@@ -14,6 +19,8 @@ export async function startRealtime({ tickMs = 10, guard } = {}) {
     allowedOrigins: [TEST_ORIGIN],
     tickMs,
     guard,
+    saveEveryMs,
+    logger,
   });
   await new Promise((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
   const url = `http://127.0.0.1:${httpServer.address().port}`;
@@ -59,6 +66,7 @@ export async function startRealtime({ tickMs = 10, guard } = {}) {
   }
 
   return {
+    io,
     url,
     db,
     player,
