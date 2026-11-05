@@ -4,7 +4,9 @@ import { findUserById } from "./users.js";
 import { findCharacter } from "./characters.js";
 import { parseId } from "./validation.js";
 import { level as sharedLevel } from "./level.js";
-import { createWorld, TICK_RATE } from "./world.js";
+import { createWorld, parseInput, TICK_RATE } from "./world.js";
+import { createGuard } from "./abuse.js";
+import { PROTOCOL } from "./protocol.js";
 
 // Socket.IO shows a refusal to the client as `connect_error`, carrying err.data.
 const refuse = (code, message) =>
@@ -19,11 +21,21 @@ export function attachRealtime(
     logger = createLogger({ level: "silent" }),
     level = sharedLevel,
     tickMs = 1000 / TICK_RATE,
+    guard = {}, // tests pass smaller limits
   },
 ) {
+  const guardOptions = {
+    ratePerSecond: PROTOCOL.rate.perSecond,
+    burst: PROTOCOL.rate.burst,
+    maxViolations: PROTOCOL.violations.max,
+    violationWindowMs: PROTOCOL.violations.windowMs,
+    ...guard,
+  };
+
   const io = new Server(httpServer, {
     serveClient: false, // we do not serve the browser bundle ourselves
     transports: ["websocket"], // no HTTP polling: one handshake request
+    maxHttpBufferSize: PROTOCOL.maxMessageBytes, // a bigger message closes the connection
     // Browsers do not apply CORS to WebSockets, so check the Origin here.
     // No Origin at all means the caller is not a browser page.
     allowRequest: (req, callback) => {
@@ -100,9 +112,37 @@ export function attachRealtime(
     });
     log.info("player connected");
 
-    // Clients only say which keys are held. The server decides what happens.
-    socket.on("input", (raw) => {
-      world.setInput(character.id, raw);
+    // Every incoming message passes through here, including events we have no
+    // handler for, so none of them can be used to flood the server.
+    const limiter = createGuard(guardOptions);
+    let kicked = false;
+
+    // The only event a client may send. False means the message was nonsense.
+    function handleInput(raw) {
+      const input = parseInput(raw);
+      if (!input) return false;
+      world.setInput(character.id, input); // a stale sequence number is ignored, not punished
+      return true;
+    }
+
+    function kick() {
+      kicked = true;
+      log.warn(
+        { reason: PROTOCOL.kickReason },
+        "player disconnected for abuse",
+      );
+      socket.emit("kicked", { reason: PROTOCOL.kickReason });
+      socket.disconnect(true);
+    }
+
+    socket.onAny((event, ...args) => {
+      if (kicked) return;
+      let verdict = limiter.hit(); // every message costs a token
+      if (verdict === "ok") {
+        const valid = event === "input" && handleInput(args[0]);
+        if (!valid) verdict = limiter.strike(); // an unknown event or a malformed payload
+      }
+      if (verdict === "kick") kick();
     });
 
     socket.on("disconnect", (reason) => {
