@@ -77,14 +77,15 @@ The server is about to close the connection because of too many violations
 
 ## Limits
 
-| Limit                        | Value                  |
-| ---------------------------- | ---------------------- |
-| Tick rate                    | 20 per second          |
-| Maximum message size         | 1024 bytes             |
-| Sustained message rate       | 40 per second          |
-| Burst allowance              | 60 messages            |
-| Violations before disconnect | 20 in 10 seconds       |
-| Input released after         | 20 ticks without input |
+| Limit                        | Value                                      |
+| ---------------------------- | ------------------------------------------ |
+| Tick rate                    | 20 per second                              |
+| Maximum message size         | 1024 bytes                                 |
+| Sustained message rate       | 40 per second                              |
+| Burst allowance              | 60 messages                                |
+| Violations before disconnect | 20 in 10 seconds                           |
+| Input released after         | 20 ticks without input                     |
+| Progress saved               | every 30 seconds, and when a player leaves |
 
 - **Message size:** a message over the limit closes the connection at once.
 - **Rate:** every message costs one token, and tokens come back at the
@@ -96,6 +97,10 @@ The server is about to close the connection because of too many violations
 - **Silence:** if a client stops sending input for the time above, the server
   releases all its keys, so a player who loses their connection does not run
   into a wall forever.
+- **Saving:** the server writes each player's position and health to the
+  database every 30 seconds (only if they changed) and when the player leaves,
+  so a crash loses at most 30 seconds. A client cannot send a position, and
+  there is no REST endpoint that accepts one.
 
 ## What the client does
 

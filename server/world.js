@@ -54,6 +54,16 @@ export function createWorld(level) {
 
     has: (id) => players.has(id),
 
+    ids: () => [...players.keys()],
+
+    // The parts of a player that are saved. Exact, unlike the rounded snapshot.
+    get(id) {
+      const player = players.get(id);
+      return player
+        ? { x: player.state.x, y: player.state.y, hp: player.state.hp }
+        : undefined;
+    },
+
     get size() {
       return players.size;
     },

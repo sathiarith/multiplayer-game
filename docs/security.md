@@ -21,10 +21,8 @@ handled, where the evidence is, and what is deliberately deferred.
 Handled:
 
 - Every route except register, login, and `/health` goes through `requireAuth`.
-- Ownership is enforced in the SQL itself: the position update uses
-  `WHERE id = ? AND user_id = ?`, so one statement checks and writes.
-- A character that belongs to someone else gets the same 404 as one that does
-  not exist, so ids cannot be probed.
+- Looking up a character for the game connection and saving its state both use `WHERE id = ?` AND `user_id = ?`.
+- A character that isn’t yours gets the same `not_found` refusal as one that doesn’t exist, and that ids in the handshake are parsed with `parseId` (plain digits only).
 - Ids in URLs accept plain digits only (`parseId`), so `1e2` and `0x10` cannot
   turn into other ids.
 - Cross-site requests are refused: a CORS allowlist with no wildcard, plus an
@@ -36,8 +34,6 @@ tests in `security.test.js`, and the id test in `validation.api.test.js`.
 
 Deferred:
 
-- `PUT /api/characters/:id/position` lets the client report its own position
-  (range-checked only). Sprint 5 removes it when the server becomes authoritative.
 - Access control is opt-in per route. A new route could forget `requireAuth`.
   Mitigation: review new routes against the existing auth tests.
 
@@ -127,6 +123,7 @@ Handled:
 - Rules that must not be bypassable live in the server and in the database
   (`UNIQUE`, foreign keys), not only in client code.
 - Game clients send inputs only, never positions. Messages over 1024 bytes close the connection, every message costs a token (40 a second, bursts of 60), and malformed inputs, unknown events, and over-limit messages are violations. 20 violations within 10 seconds disconnect the client. The rules are in `docs/protocol.md`, and a test fails if the document and the code disagree.
+- The server owns each character’s position and health. They are saved from the server’s own state every 30 seconds and when a player leaves, and no REST endpoint accepts a position.
 
 Accepted trade-offs:
 
@@ -215,17 +212,17 @@ Deferred:
 
 ## Deferred work summary
 
-| Item                                            | Planned     |
-| ----------------------------------------------- | ----------- |
-| Remove the client-reported position endpoint    | Sprint 5    |
-| Redis sessions and shared rate limits           | Sprint 6    |
-| Escape chat messages in the client              | Sprint 7    |
-| TLS, `trust proxy`, `Secure` cookies            | Sprint 9    |
-| Dependency scanning in CI                       | Sprint 9    |
-| Alerting, log retention, backups                | Sprint 9    |
-| Process-level error handlers, graceful shutdown | Sprint 9    |
-| Per-account lockout, MFA, password reset        | Not planned |
-| Connection-rate limits per IP and per user      | Sprint 9    |
+| Item                                                  | Planned     |
+| ----------------------------------------------------- | ----------- |
+| Redis sessions and shared rate limits                 | Sprint 6    |
+| Escape chat messages in the client                    | Sprint 7    |
+| TLS, `trust proxy`, `Secure` cookies                  | Sprint 9    |
+| Dependency scanning in CI                             | Sprint 9    |
+| Alerting, log retention, backups                      | Sprint 9    |
+| Process-level error handlers, graceful shutdown       | Sprint 9    |
+| Per-account lockout, MFA, password reset              | Not planned |
+| Connection-rate limits per IP and per user            | Sprint 9    |
+| Full graceful shutdown (timeouts, finishing requests) | Sprint 9    |
 
 ## How to re-check
 

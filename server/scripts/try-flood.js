@@ -4,7 +4,9 @@ import { io } from "socket.io-client";
 
 const [username, password, characterId] = process.argv.slice(2);
 if (!username || !password || !characterId) {
-  console.error("Usage: node scripts/try-flood.js <username> <password> <characterId>");
+  console.error(
+    "Usage: node scripts/try-flood.js <username> <password> <characterId>",
+  );
   process.exit(1);
 }
 
@@ -35,11 +37,19 @@ socket.on("connect_error", (err) => {
 socket.on("welcome", () => {
   console.log("Connected. Sending 500 inputs as fast as possible...");
   for (let seq = 1; seq <= 500; seq++) {
-    socket.emit("input", { seq, up: false, down: false, left: false, right: true });
+    socket.emit("input", {
+      seq,
+      up: false,
+      down: false,
+      left: false,
+      right: true,
+    });
   }
 });
 
-socket.on("kicked", ({ reason }) => console.log("Kicked by the server:", reason));
+socket.on("kicked", ({ reason }) =>
+  console.log("Kicked by the server:", reason),
+);
 socket.on("disconnect", (reason) => {
   console.log("Disconnected:", reason);
   process.exit(0);

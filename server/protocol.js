@@ -8,6 +8,7 @@ export const PROTOCOL = {
   rate: { perSecond: 40, burst: 60 }, // a real client sends about 20 a second
   violations: { max: 20, windowMs: 10_000 }, // this many in this long means a kick
   kickReason: "too_many_messages",
+  saveEveryMs: 30_000, // positions and health are written this often, and when a player leaves
   events: {
     client: ["input"],
     server: ["welcome", "snapshot", "replaced", "kicked"],

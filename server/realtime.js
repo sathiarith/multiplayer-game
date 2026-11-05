@@ -6,6 +6,7 @@ import { parseId } from "./validation.js";
 import { level as sharedLevel } from "./level.js";
 import { createWorld, parseInput, TICK_RATE } from "./world.js";
 import { createGuard } from "./abuse.js";
+import { createPersistence } from "./persistence.js";
 import { PROTOCOL } from "./protocol.js";
 
 // Socket.IO shows a refusal to the client as `connect_error`, carrying err.data.
@@ -21,6 +22,7 @@ export function attachRealtime(
     logger = createLogger({ level: "silent" }),
     level = sharedLevel,
     tickMs = 1000 / TICK_RATE,
+    saveEveryMs = PROTOCOL.saveEveryMs,
     guard = {}, // tests pass smaller limits
   },
 ) {
@@ -51,6 +53,17 @@ export function attachRealtime(
   const world = createWorld(level);
   const online = new Map(); // characterId -> the socket currently playing it
 
+  // Writes positions and health to the database: on a timer for players who
+  // changed, and once more when a player leaves.
+  const persistence = createPersistence({
+    db,
+    world,
+    ownerOf: (characterId) => online.get(characterId)?.data.user.id,
+    logger,
+    intervalMs: saveEveryMs,
+  });
+  persistence.start();
+
   // The game loop: one fixed step of the world, then a snapshot for everyone.
   const timer = setInterval(() => {
     if (world.size === 0) return; // nobody is playing
@@ -62,7 +75,10 @@ export function attachRealtime(
     }
   }, tickMs);
   timer.unref(); // never keeps the process alive on its own
-  httpServer.once("close", () => clearInterval(timer));
+  httpServer.once("close", () => {
+    clearInterval(timer);
+    persistence.stop();
+  });
 
   // Runs for every connection attempt. Calling next(error) refuses it.
   io.use((socket, next) => {
@@ -147,8 +163,10 @@ export function attachRealtime(
 
     socket.on("disconnect", (reason) => {
       if (online.get(character.id) === socket) {
+        persistence.save(character.id); // the last position, before the player is forgotten
         online.delete(character.id);
         world.remove(character.id);
+        persistence.forget(character.id);
       }
       log.info({ reason }, "player disconnected");
     });

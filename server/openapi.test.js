@@ -135,14 +135,6 @@ test("responses seen in practice are all documented", async () => {
     "post",
     "/api/characters",
   );
-  const move = { x: 1, y: 1 };
-  const position = "/api/characters/{id}/position";
-  seen(
-    await anon.put("/api/characters/1/position").send(move),
-    401,
-    "put",
-    position,
-  );
 
   // Logged in
   const agent = request.agent(app);
@@ -162,30 +154,6 @@ test("responses seen in practice are all documented", async () => {
     403,
     "post",
     "/api/characters",
-  );
-  seen(
-    await agent.put(`/api/characters/${created.body.id}/position`).send(move),
-    200,
-    "put",
-    position,
-  );
-  seen(
-    await agent.put(`/api/characters/${created.body.id}/position`).send({}),
-    400,
-    "put",
-    position,
-  );
-  seen(
-    await agent.put("/api/characters/99999/position").send(move),
-    404,
-    "put",
-    position,
-  );
-  seen(
-    await agent.put("/api/characters/1/position").set(evil).send(move),
-    403,
-    "put",
-    position,
   );
 
   // 409 for the character limit and for a taken name

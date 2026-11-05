@@ -1,6 +1,6 @@
-import { test, expect, beforeEach, afterEach } from "vitest";
+import { test, expect, beforeEach, afterEach, vi } from "vitest";
 import { startRealtime } from "./realtime-test-helpers.js";
-import { TEST_ORIGIN } from "./test-helpers.js";
+import { TEST_ORIGIN, createLogCapture } from "./test-helpers.js";
 
 let rt;
 beforeEach(async () => {
@@ -410,5 +410,119 @@ test("a flooding client does not disturb the others, and may connect again after
 
     const again = await srv.open(asPlayer(alice)); // a kick is not a ban
     expect(again.welcome).toBeDefined();
+  });
+});
+
+const savedState = (srv, id) =>
+  srv.db
+    .prepare("SELECT pos_x AS x, pos_y AS y, hp FROM characters WHERE id = ?")
+    .get(id);
+
+test("a player's position is saved when they leave, and they return to it", async () => {
+  const alice = await rt.player("alice", "Aria");
+  const first = await rt.open(asPlayer(alice));
+  first.socket.emit("input", hold(1, { right: true }));
+  await snapshotWhere(first.socket, (s) => me(s, alice.characterId).x >= 150);
+
+  first.socket.disconnect();
+  await vi.waitFor(() =>
+    expect(savedState(rt, alice.characterId).x).toBeGreaterThanOrEqual(150),
+  );
+
+  const saved = savedState(rt, alice.characterId);
+  const second = await rt.open(asPlayer(alice));
+  expect(second.welcome.character).toMatchObject({ x: saved.x, y: saved.y });
+  const snap = await snapshotWhere(
+    second.socket,
+    (s) => me(s, alice.characterId) !== undefined,
+  );
+  expect(me(snap, alice.characterId).x).toBeCloseTo(saved.x, 1);
+});
+
+test("positions are also saved while a player stays connected", async () => {
+  await withServer({ saveEveryMs: 30 }, async (srv) => {
+    const alice = await srv.player("alice", "Aria");
+    const { socket } = await srv.open(asPlayer(alice));
+
+    socket.emit("input", hold(1, { right: true }));
+
+    await vi.waitFor(() =>
+      expect(savedState(srv, alice.characterId).x).toBeGreaterThan(100),
+    );
+    expect(socket.connected).toBe(true);
+  });
+});
+
+test("a player who is standing still is not written again and again", async () => {
+  await withServer({ saveEveryMs: 20 }, async (srv) => {
+    const alice = await srv.player("alice", "Aria");
+    const prepare = vi.spyOn(srv.db, "prepare");
+    await srv.open(asPlayer(alice));
+
+    await wait(300); // many save intervals
+
+    const updates = prepare.mock.calls.filter(([sql]) =>
+      sql.startsWith("UPDATE characters"),
+    );
+    expect(updates).toHaveLength(1);
+  });
+});
+
+test("everyone who is connected is saved when the server disconnects them all", async () => {
+  const alice = await rt.player("alice", "Aria");
+  const bob = await rt.player("bobby", "Borin");
+  const a = await rt.open(asPlayer(alice));
+  const b = await rt.open(asPlayer(bob));
+  a.socket.emit("input", hold(1, { right: true }));
+  b.socket.emit("input", hold(1, { left: true }));
+  await snapshotWhere(
+    a.socket,
+    (s) => me(s, alice.characterId).x >= 150 && me(s, bob.characterId).x <= 70,
+  );
+
+  rt.io.disconnectSockets(true); // what closing the server does to every player
+
+  await vi.waitFor(() => {
+    expect(savedState(rt, alice.characterId).x).toBeGreaterThanOrEqual(150);
+    expect(savedState(rt, bob.characterId).x).toBeLessThanOrEqual(70);
+  });
+});
+
+test("a player kicked for abuse is saved too", async () => {
+  await withServer({ guard: STRICT }, async (srv) => {
+    const alice = await srv.player("alice", "Aria");
+    const { socket } = await srv.open(asPlayer(alice));
+
+    // Walk first, so there is a position worth saving.
+    socket.emit("input", hold(1, { right: true }));
+    await snapshotWhere(socket, (s) => me(s, alice.characterId).x >= 120);
+    expect(savedState(srv, alice.characterId).x).toBe(100); // nothing has been saved yet
+
+    const { kicked } = watch(socket);
+    for (let seq = 2; seq <= 50; seq++)
+      socket.emit("input", hold(seq, { right: true }));
+    await kicked;
+
+    await vi.waitFor(() =>
+      expect(savedState(srv, alice.characterId).x).toBeGreaterThanOrEqual(120),
+    );
+  });
+});
+
+test("a failed save is logged, and the game carries on", async () => {
+  const { lines, logger } = createLogCapture();
+  await withServer({ saveEveryMs: 20, logger }, async (srv) => {
+    const alice = await srv.player("alice", "Aria");
+    const { socket } = await srv.open(asPlayer(alice));
+
+    srv.db.exec("DROP TABLE characters"); // saving fails from now on
+
+    await vi.waitFor(() =>
+      expect(lines.some((l) => l.msg === "could not save character")).toBe(
+        true,
+      ),
+    );
+    await snapshotWhere(socket, () => true); // the world is still running
+    expect(socket.connected).toBe(true);
   });
 });

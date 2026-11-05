@@ -4,7 +4,7 @@ import { createUser } from "./users.js";
 import {
   createCharacter,
   listCharacters,
-  updatePosition,
+  saveCharacterState,
   CharacterLimitError,
   MAX_CHARACTERS,
   SPAWN,
@@ -64,16 +64,31 @@ test("deleting a user deletes their characters", () => {
   expect(listCharacters(db, alice.id)).toEqual([]);
 });
 
-test("updatePosition only changes the owner's character", () => {
+test("saveCharacterState only changes the owner's character", () => {
   const c = createCharacter(db, alice.id, "Aria");
-  expect(updatePosition(db, bob.id, c.id, 5, 5)).toBe(false);
+  expect(saveCharacterState(db, bob.id, c.id, { x: 5, y: 5, hp: 10 })).toBe(
+    false,
+  );
   expect(listCharacters(db, alice.id)[0]).toMatchObject({
     x: SPAWN.x,
     y: SPAWN.y,
+    hp: 100,
   });
 
-  expect(updatePosition(db, alice.id, c.id, 5, 7)).toBe(true);
-  expect(listCharacters(db, alice.id)[0]).toMatchObject({ x: 5, y: 7 });
+  expect(
+    saveCharacterState(db, alice.id, c.id, { x: 5.25, y: 7.5, hp: 40 }),
+  ).toBe(true);
+  expect(listCharacters(db, alice.id)[0]).toMatchObject({
+    x: 5.25,
+    y: 7.5,
+    hp: 40,
+  });
+});
+
+test("saveCharacterState reports a character that does not exist", () => {
+  expect(saveCharacterState(db, alice.id, 99999, { x: 1, y: 1, hp: 1 })).toBe(
+    false,
+  );
 });
 
 test("SQL in a character name is stored as data, never executed", () => {
