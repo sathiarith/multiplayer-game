@@ -4,7 +4,9 @@ import { io } from "socket.io-client";
 
 const [username, password, characterId] = process.argv.slice(2);
 if (!username || !password || !characterId) {
-  console.error("Usage: node scripts/try-game.js <username> <password> <characterId>");
+  console.error(
+    "Usage: node scripts/try-game.js <username> <password> <characterId>",
+  );
   process.exit(1);
 }
 
@@ -37,12 +39,20 @@ socket.on("connect_error", (err) => {
 
 socket.on("welcome", ({ you, tickRate }) => {
   me = you;
-  console.log(`Connected as character ${you}. The server ticks ${tickRate} times a second.`);
+  console.log(
+    `Connected as character ${you}. The server ticks ${tickRate} times a second.`,
+  );
   // Hold "right" for 1.5 seconds, sending the input at the tick rate.
   const started = Date.now();
   sender = setInterval(() => {
     const holding = Date.now() - started < 1500;
-    socket.emit("input", { seq: ++seq, up: false, down: false, left: false, right: holding });
+    socket.emit("input", {
+      seq: ++seq,
+      up: false,
+      down: false,
+      left: false,
+      right: holding,
+    });
   }, 1000 / tickRate);
 });
 
