@@ -1,7 +1,7 @@
 import { io as defaultIo } from "socket.io-client";
 
 // Connects to the game server and reports progress as plain objects:
-//   { status: "connecting" | "reconnecting" | "replaced" | "ended" }
+//   { status: "connecting" | "reconnecting" | "replaced" | "kicked" | "ended" }
 //   { status: "connected", character }
 //   { status: "refused", code }
 // The returned object is also how the game talks to the server:
@@ -27,6 +27,7 @@ export function connectToGame({ characterId, onChange, io = defaultIo }) {
     report({ status: "connected", character }),
   );
   socket.on("replaced", () => settle({ status: "replaced" }));
+  socket.on("kicked", () => settle({ status: "kicked" }));
   socket.on("connect_error", (err) => {
     const code = err.data?.code; // only present when the server refused us
     if (code) settle({ status: "refused", code });

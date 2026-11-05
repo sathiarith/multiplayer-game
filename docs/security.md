@@ -29,6 +29,7 @@ Handled:
   turn into other ids.
 - Cross-site requests are refused: a CORS allowlist with no wildcard, plus an
   `Origin` check on every state-changing request (`originGuard`).
+- The WebSocket handshake checks `Origin` against the same allowlist as the REST guard, because browsers do not apply CORS to WebSockets. The user comes only from the session, and a character is checked for ownership exactly as in REST.
 
 Evidence: the intruder test in `characters.api.test.js`, the forged-request
 tests in `security.test.js`, and the id test in `validation.api.test.js`.
@@ -74,6 +75,7 @@ Handled:
   `http-server`.
 - Third-party art is credited in `CREDITS.md` and kept out of git, as its
   license requires.
+- `npm audit` is reviewed on every dependency change. A high-severity `body-parser` advisory (denial of service through compressed request bodies) was fixed by a minor update. The Swagger UI dependency tree includes `@scarf/scarf`, whose analytics install script is denied in `allowScripts`.
 
 Deferred:
 
@@ -124,6 +126,7 @@ Handled:
   creating a character with a chosen level or HP).
 - Rules that must not be bypassable live in the server and in the database
   (`UNIQUE`, foreign keys), not only in client code.
+- Game clients send inputs only, never positions. Messages over 1024 bytes close the connection, every message costs a token (40 a second, bursts of 60), and malformed inputs, unknown events, and over-limit messages are violations. 20 violations within 10 seconds disconnect the client. The rules are in `docs/protocol.md`, and a test fails if the document and the code disagree.
 
 Accepted trade-offs:
 
@@ -133,6 +136,7 @@ Accepted trade-offs:
 Deferred:
 
 - Server-authoritative game state (Sprint 5).
+- Limits on connection attempts per IP and a cap on connections per user (Sprint 9, behind the reverse proxy); a timeout for sockets that open but never finish the handshake.
 
 ## A07 Authentication Failures
 
@@ -178,6 +182,7 @@ Handled:
   blocked requests appear as warnings, and unexpected errors as errors.
 - Cookies and authorization headers are redacted, and request bodies are
   never logged. Incoming request ids are accepted only if short and well formed.
+- Disconnections for abuse are logged as warnings with the user and character ids.
 
 Evidence: `logging.test.js`.
 
@@ -220,6 +225,7 @@ Deferred:
 | Alerting, log retention, backups                | Sprint 9    |
 | Process-level error handlers, graceful shutdown | Sprint 9    |
 | Per-account lockout, MFA, password reset        | Not planned |
+| Connection-rate limits per IP and per user      | Sprint 9    |
 
 ## How to re-check
 

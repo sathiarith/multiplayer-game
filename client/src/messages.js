@@ -61,6 +61,12 @@ export function describeConnection(state) {
         text: "You were disconnected from the game. This happens when you log out.",
         retryLabel: "Reconnect",
       };
+    case "kicked":
+      return {
+        tone: "danger",
+        text: "The server disconnected you for sending too many messages.",
+        retryLabel: "Reconnect",
+      };
     case "refused":
       return {
         tone: "danger",

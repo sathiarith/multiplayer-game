@@ -56,3 +56,10 @@ test("refusals explain themselves, and only a server fault offers a retry", () =
   expect(refused("internal_error").retryLabel).toBe("Try again");
   expect(refused("something_new").text).toMatch(/refused/i);
 });
+
+test("a kicked player is told why, and can reconnect by choice", () => {
+  const info = describeConnection({ status: "kicked" });
+  expect(info.tone).toBe("danger");
+  expect(info.text).toMatch(/too many messages/i);
+  expect(info.retryLabel).toBe("Reconnect");
+});

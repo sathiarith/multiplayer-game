@@ -310,7 +310,8 @@ test("a normal burst of input is never blocked", async () => {
   const alice = await rt.player("alice", "Aria");
   const { socket } = await rt.open(asPlayer(alice));
 
-  for (let seq = 1; seq <= 50; seq++) socket.emit("input", hold(seq, { right: seq % 2 === 0 }));
+  for (let seq = 1; seq <= 50; seq++)
+    socket.emit("input", hold(seq, { right: seq % 2 === 0 }));
 
   await snapshotWhere(socket, (s) => me(s, alice.characterId).ack === 50);
   expect(socket.connected).toBe(true);
@@ -322,7 +323,8 @@ test("a client that floods the server is disconnected, and told why", async () =
     const { socket } = await srv.open(asPlayer(alice));
     const { kicked, closed } = watch(socket);
 
-    for (let seq = 1; seq <= 50; seq++) socket.emit("input", hold(seq, { right: true }));
+    for (let seq = 1; seq <= 50; seq++)
+      socket.emit("input", hold(seq, { right: true }));
 
     expect(await kicked).toEqual({ reason: "too_many_messages" });
     expect(await closed).toBe("io server disconnect");
@@ -398,7 +400,8 @@ test("a flooding client does not disturb the others, and may connect again after
     const b = await srv.open(asPlayer(bob));
     const { kicked } = watch(a.socket);
 
-    for (let seq = 1; seq <= 50; seq++) a.socket.emit("input", hold(seq, { right: true }));
+    for (let seq = 1; seq <= 50; seq++)
+      a.socket.emit("input", hold(seq, { right: true }));
     await kicked;
 
     const snap = await snapshotWhere(b.socket, (s) => s.players.length === 1);
