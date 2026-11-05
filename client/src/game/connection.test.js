@@ -131,3 +131,13 @@ test("after close, nothing is sent and snapshots are ignored", () => {
   expect(socket.volatile.emit).not.toHaveBeenCalled();
   expect(seen).not.toHaveBeenCalled();
 });
+
+test("being kicked is final, and the disconnect that follows does not hide it", () => {
+  const { socket, last } = start();
+  socket.emit("welcome", { character: { id: 7 } });
+
+  socket.emit("kicked", { reason: "too_many_messages" });
+  socket.emit("disconnect", "io server disconnect");
+
+  expect(last()).toEqual({ status: "kicked" });
+});

@@ -287,3 +287,128 @@ test("a reconnecting player keeps their place but starts a fresh input sequence"
   second.socket.emit("input", hold(1, { right: true })); // seq 1 is accepted again
   await snapshotWhere(second.socket, (s) => me(s, alice.characterId).ack === 1);
 });
+
+// Runs a test against a server with its own (usually stricter) limits.
+async function withServer(options, run) {
+  const server = await startRealtime(options);
+  try {
+    await run(server);
+  } finally {
+    await server.close();
+  }
+}
+
+// Listeners must be attached before the messages are sent.
+const watch = (socket) => ({
+  kicked: new Promise((resolve) => socket.once("kicked", resolve)),
+  closed: new Promise((resolve) => socket.once("disconnect", resolve)),
+});
+
+const STRICT = { ratePerSecond: 1, burst: 5, maxViolations: 3 };
+
+test("a normal burst of input is never blocked", async () => {
+  const alice = await rt.player("alice", "Aria");
+  const { socket } = await rt.open(asPlayer(alice));
+
+  for (let seq = 1; seq <= 50; seq++)
+    socket.emit("input", hold(seq, { right: seq % 2 === 0 }));
+
+  await snapshotWhere(socket, (s) => me(s, alice.characterId).ack === 50);
+  expect(socket.connected).toBe(true);
+});
+
+test("a client that floods the server is disconnected, and told why", async () => {
+  await withServer({ guard: STRICT }, async (srv) => {
+    const alice = await srv.player("alice", "Aria");
+    const { socket } = await srv.open(asPlayer(alice));
+    const { kicked, closed } = watch(socket);
+
+    for (let seq = 1; seq <= 50; seq++)
+      socket.emit("input", hold(seq, { right: true }));
+
+    expect(await kicked).toEqual({ reason: "too_many_messages" });
+    expect(await closed).toBe("io server disconnect");
+  });
+});
+
+test("events the server does not know are violations", async () => {
+  await withServer({ guard: { burst: 100, maxViolations: 3 } }, async (srv) => {
+    const alice = await srv.player("alice", "Aria");
+    const { socket } = await srv.open(asPlayer(alice));
+    const { kicked } = watch(socket);
+
+    for (let i = 0; i < 5; i++) socket.emit("teleport", { x: 700, y: 500 });
+
+    expect((await kicked).reason).toBe("too_many_messages");
+  });
+});
+
+test("malformed input is a violation", async () => {
+  await withServer({ guard: { burst: 100, maxViolations: 3 } }, async (srv) => {
+    const alice = await srv.player("alice", "Aria");
+    const { socket } = await srv.open(asPlayer(alice));
+    const { kicked } = watch(socket);
+
+    for (let i = 0; i < 5; i++) socket.emit("input", "left");
+
+    expect((await kicked).reason).toBe("too_many_messages");
+  });
+});
+
+test("one mistake is forgiven, and the next good input still works", async () => {
+  await withServer({ guard: { burst: 100, maxViolations: 3 } }, async (srv) => {
+    const alice = await srv.player("alice", "Aria");
+    const { socket } = await srv.open(asPlayer(alice));
+
+    socket.emit("input", { seq: 1 }); // malformed
+    socket.emit("input", hold(1, { right: true }));
+
+    await snapshotWhere(socket, (s) => me(s, alice.characterId).ack === 1);
+    expect(socket.connected).toBe(true);
+  });
+});
+
+test("a repeated sequence number is ignored but never punished", async () => {
+  await withServer({ guard: { burst: 100, maxViolations: 3 } }, async (srv) => {
+    const alice = await srv.player("alice", "Aria");
+    const { socket } = await srv.open(asPlayer(alice));
+
+    socket.emit("input", hold(5, { right: true }));
+    for (let i = 0; i < 10; i++) socket.emit("input", hold(5, { left: true })); // stale
+
+    await snapshotWhere(socket, (s) => me(s, alice.characterId).ack === 5);
+    await wait(100);
+    expect(socket.connected).toBe(true);
+  });
+});
+
+test("a message over the size limit closes the connection", async () => {
+  const alice = await rt.player("alice", "Aria");
+  const { socket } = await rt.open(asPlayer(alice));
+  const closed = new Promise((resolve) => socket.once("disconnect", resolve));
+
+  socket.emit("input", { ...hold(1), junk: "x".repeat(5000) });
+
+  expect(await closed).toMatch(/transport/);
+});
+
+test("a flooding client does not disturb the others, and may connect again afterwards", async () => {
+  await withServer({ guard: STRICT }, async (srv) => {
+    const alice = await srv.player("alice", "Aria");
+    const bob = await srv.player("bobby", "Borin");
+    const a = await srv.open(asPlayer(alice));
+    const b = await srv.open(asPlayer(bob));
+    const { kicked } = watch(a.socket);
+
+    for (let seq = 1; seq <= 50; seq++)
+      a.socket.emit("input", hold(seq, { right: true }));
+    await kicked;
+
+    const snap = await snapshotWhere(b.socket, (s) => s.players.length === 1);
+    expect(snap.players[0].name).toBe("Borin"); // the flooder left the world
+    expect(b.socket.connected).toBe(true);
+
+    const again = await srv.open(asPlayer(alice)); // a kick is not a ban
+    expect(again.welcome).toBeDefined();
+  });
+});
