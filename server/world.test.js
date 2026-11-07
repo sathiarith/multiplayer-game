@@ -216,3 +216,55 @@ test("ids lists everyone in the world", () => {
   world.remove(1);
   expect(world.ids()).toEqual([2]);
 });
+
+test("a character's score starts from what was saved", () => {
+  const world = createWorld(room);
+  world.add({ ...aria, score: 7 });
+  expect(world.get(1).score).toBe(7);
+});
+
+test("every tile walked earns a point, measured on the server", () => {
+  const world = createWorld(hall);
+  world.add(aria);
+  world.setInput(1, hold(1, { right: true }));
+
+  steps(world, 3);
+  expect(world.get(1).score).toBe(0); // 30 px
+  steps(world, 1);
+  expect(world.get(1).score).toBe(1); // 40 px is one tile
+  steps(world, 8);
+  expect(world.get(1).score).toBe(3);
+});
+
+test("walking into a wall earns nothing", () => {
+  const world = createWorld(room);
+  world.add(aria);
+  world.setInput(1, hold(1, { right: true }));
+  steps(world, 18); // reaches the right wall, about three tiles away
+  const atTheWall = world.get(1).score;
+  expect(atTheWall).toBe(3);
+
+  for (let seq = 2; seq <= 6; seq++) {
+    world.setInput(1, hold(seq, { right: true }));
+    steps(world, 5); // keep pushing
+  }
+
+  expect(world.get(1).score).toBe(atTheWall);
+});
+
+test("re-adding a player keeps the score earned so far", () => {
+  const world = createWorld(hall);
+  world.add(aria);
+  world.setInput(1, hold(1, { right: true }));
+  steps(world, 4);
+
+  world.add({ ...aria, score: 0 }); // a new connection, with the character as it was saved
+
+  expect(world.get(1).score).toBe(1);
+});
+
+test("the score is not part of the snapshot", () => {
+  const world = createWorld(room);
+  world.add({ ...aria, score: 7 });
+  expect(Object.keys(world.snapshot().players[0])).not.toContain("score");
+});
