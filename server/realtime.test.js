@@ -415,7 +415,9 @@ test("a flooding client does not disturb the others, and may connect again after
 
 const savedState = (srv, id) =>
   srv.db
-    .prepare("SELECT pos_x AS x, pos_y AS y, hp FROM characters WHERE id = ?")
+    .prepare(
+      "SELECT pos_x AS x, pos_y AS y, hp, score FROM characters WHERE id = ?",
+    )
     .get(id);
 
 test("a player's position is saved when they leave, and they return to it", async () => {
@@ -525,4 +527,24 @@ test("a failed save is logged, and the game carries on", async () => {
     await snapshotWhere(socket, () => true); // the world is still running
     expect(socket.connected).toBe(true);
   });
+});
+
+test("tiles walked become a score that is saved and shown on the leaderboard", async () => {
+  const alice = await rt.player("alice", "Aria");
+  const { socket } = await rt.open(asPlayer(alice));
+
+  socket.emit("input", hold(1, { right: true }));
+  await snapshotWhere(socket, (s) => me(s, alice.characterId).x >= 150); // more than a tile from x = 100
+  socket.disconnect();
+
+  await vi.waitFor(() =>
+    expect(savedState(rt, alice.characterId).score).toBeGreaterThanOrEqual(1),
+  );
+  const res = await fetch(`${rt.url}/api/leaderboard`, {
+    headers: { Cookie: alice.cookie },
+  });
+  const board = await res.json();
+  expect(board).toHaveLength(1);
+  expect(board[0]).toMatchObject({ rank: 1, name: "Aria" });
+  expect(board[0].score).toBeGreaterThanOrEqual(1);
 });

@@ -106,3 +106,16 @@ test("findCharacter only finds the owner's character", () => {
   expect(findCharacter(db, bob.id, c.id)).toBeUndefined();
   expect(findCharacter(db, alice.id, 99999)).toBeUndefined();
 });
+
+test("a new character starts with a score of 0", () => {
+  expect(createCharacter(db, alice.id, "Aria").score).toBe(0);
+});
+
+test("saveCharacterState saves the score, and leaves it alone when none is given", () => {
+  const c = createCharacter(db, alice.id, "Aria");
+  saveCharacterState(db, alice.id, c.id, { x: 5, y: 5, hp: 90, score: 12 });
+  expect(listCharacters(db, alice.id)[0]).toMatchObject({ hp: 90, score: 12 });
+
+  saveCharacterState(db, alice.id, c.id, { x: 6, y: 6, hp: 80 }); // no score given
+  expect(listCharacters(db, alice.id)[0]).toMatchObject({ hp: 80, score: 12 });
+});

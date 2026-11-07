@@ -142,3 +142,64 @@ test("start saves on a timer, and stop ends it", () => {
   vi.advanceTimersByTime(5000);
   expect(saved().x).toBeCloseTo(130); // no more saves
 });
+
+test("the score is saved with the position", () => {
+  move(8); // two tiles
+  persistence.save(aria.id);
+  expect(saved().score).toBe(2);
+});
+
+test("onSaved is told about every write, and only about writes", () => {
+  const onSaved = vi.fn();
+  const watching = createPersistence({
+    db,
+    world,
+    ownerOf: (id) => owners.get(id),
+    logger,
+    onSaved,
+    intervalMs: 1000,
+  });
+  move(4);
+
+  watching.save(aria.id);
+  watching.save(aria.id); // nothing changed: nothing written, nothing announced
+
+  expect(onSaved).toHaveBeenCalledTimes(1);
+  expect(onSaved).toHaveBeenCalledWith(
+    aria.id,
+    expect.objectContaining({ score: 1 }),
+  );
+});
+
+test("a failing onSaved is logged and does not stop the save", async () => {
+  const watching = createPersistence({
+    db,
+    world,
+    ownerOf: (id) => owners.get(id),
+    logger,
+    onSaved: vi.fn().mockRejectedValue(new Error("redis down")),
+    intervalMs: 1000,
+  });
+  move(4);
+
+  expect(watching.save(aria.id)).toBe(true);
+  await vi.waitFor(() => expect(logger.error).toHaveBeenCalledTimes(1));
+  expect(saved().score).toBe(1);
+});
+
+test("an onSaved that throws at once is logged too", () => {
+  const watching = createPersistence({
+    db,
+    world,
+    ownerOf: (id) => owners.get(id),
+    logger,
+    onSaved: () => {
+      throw new Error("broken");
+    },
+    intervalMs: 1000,
+  });
+  move(4);
+
+  expect(watching.save(aria.id)).toBe(true);
+  expect(logger.error).toHaveBeenCalledTimes(1);
+});

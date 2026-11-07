@@ -5,7 +5,6 @@ export { TICK_RATE }; // realtime.js and the tests import it from here
 export const STALE_AFTER_TICKS = TICK_RATE; // no input for one second releases every key
 
 const NO_INPUT = { up: false, down: false, left: false, right: false };
-
 const INPUT_FIELDS = ["seq", "up", "down", "left", "right"];
 
 // A valid input is exactly { seq, up, down, left, right }. Anything else is null.
@@ -29,12 +28,12 @@ export function parseInput(raw) {
 const round2 = (n) => Math.round(n * 100) / 100;
 
 export function createWorld(level) {
-  const players = new Map(); // character id -> { id, state, input, ack, inputTick }
+  const players = new Map(); // character id -> { id, state, input, ack, inputTick, score, walked }
   let tick = 0;
 
   return {
-    // Adds a player, or re-attaches one already in the world: the position is
-    // kept, but the input sequence starts again.
+    // Adds a player, or re-attaches one already in the world: the position and
+    // score are kept, but the input sequence starts again.
     add(character) {
       const existing = players.get(character.id);
       players.set(character.id, {
@@ -45,6 +44,8 @@ export function createWorld(level) {
         input: NO_INPUT,
         ack: 0,
         inputTick: tick,
+        score: existing ? existing.score : (character.score ?? 0),
+        walked: existing ? existing.walked : 0, // pixels walked towards the next point
       });
     },
 
@@ -60,7 +61,12 @@ export function createWorld(level) {
     get(id) {
       const player = players.get(id);
       return player
-        ? { x: player.state.x, y: player.state.y, hp: player.state.hp }
+        ? {
+            x: player.state.x,
+            y: player.state.y,
+            hp: player.state.hp,
+            score: player.score,
+          }
         : undefined;
     },
 
@@ -91,7 +97,20 @@ export function createWorld(level) {
       for (const player of players.values()) {
         const stale = tick - player.inputTick > STALE_AFTER_TICKS;
         const held = stale ? NO_INPUT : player.input;
-        player.state = stepInput(player.state, held, level, TICK_RATE);
+        const before = player.state;
+        player.state = stepInput(before, held, level, TICK_RATE);
+
+        // Score: one point for every tile walked, measured here on the server.
+        // Walking into a wall moves nothing, so it earns nothing. The small
+        // allowance absorbs floating-point error.
+        player.walked += Math.hypot(
+          player.state.x - before.x,
+          player.state.y - before.y,
+        );
+        while (player.walked >= level.tileSize - 1e-6) {
+          player.walked -= level.tileSize;
+          player.score += 1;
+        }
       }
     },
 
