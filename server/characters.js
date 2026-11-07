@@ -8,7 +8,7 @@ export class CharacterLimitError extends Error {}
 import { level } from "./level.js";
 
 // pos_x AS x renames the column in the result, so the API says x and y.
-const COLUMNS = "id, name, class, level, hp, pos_x AS x, pos_y AS y";
+const COLUMNS = "id, name, class, level, hp, score, pos_x AS x, pos_y AS y";
 
 export function listCharacters(db, userId) {
   return db
@@ -37,13 +37,18 @@ export function createCharacter(db, userId, name, characterClass = "warrior") {
 }
 
 // Saves what the server knows about a character. Returns true only if the
-// character exists AND belongs to this user.
-export function saveCharacterState(db, userId, characterId, { x, y, hp }) {
+// character exists AND belongs to this user. A missing score is left unchanged.
+export function saveCharacterState(
+  db,
+  userId,
+  characterId,
+  { x, y, hp, score },
+) {
   const info = db
     .prepare(
-      "UPDATE characters SET pos_x = ?, pos_y = ?, hp = ? WHERE id = ? AND user_id = ?",
+      "UPDATE characters SET pos_x = ?, pos_y = ?, hp = ?, score = COALESCE(?, score) WHERE id = ? AND user_id = ?",
     )
-    .run(x, y, hp, characterId, userId);
+    .run(x, y, hp, score ?? null, characterId, userId);
   return info.changes === 1;
 }
 
