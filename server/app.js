@@ -104,6 +104,7 @@ export function createApp(
     secureCookies = false,
     logger = createLogger({ level: "silent" }),
     rateLimits = {},
+    rateLimitStore, // optional: (name) => a store for express-rate-limit; undefined means in memory
     docs = false,
     allowedOrigins = [],
     sessionStore, // undefined means express-session's in-memory store
@@ -116,10 +117,14 @@ export function createApp(
     login: { ...DEFAULT_RATE_LIMITS.login, ...rateLimits.login },
     register: { ...DEFAULT_RATE_LIMITS.register, ...rateLimits.register },
   };
+  // Each limiter gets its own store: sharing one would count every request twice.
+  const storeFor = (name) =>
+    rateLimitStore ? { store: rateLimitStore(name) } : {};
   const loginLimiter = makeLimiter(limits.login, {
     skipSuccessfulRequests: true,
+    ...storeFor("login"),
   });
-  const registerLimiter = makeLimiter(limits.register);
+  const registerLimiter = makeLimiter(limits.register, storeFor("register"));
 
   // Checked against when the username does not exist, so that path costs the
   // same time as a real password check.
