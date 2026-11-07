@@ -7,6 +7,7 @@ import { openDb } from "./db.js";
 import { connectRedis } from "./redis.js";
 import { createApp } from "./app.js";
 import { attachRealtime } from "./realtime.js";
+import { RedisStore as RateLimitStore } from "rate-limit-redis";
 
 const config = loadConfig(); // throws with a clear message if settings are wrong
 const logger = createLogger({ level: config.logLevel });
@@ -41,6 +42,13 @@ const app = createApp(db, {
   sessionSecret,
   sessionStore,
   healthChecks: redis ? [() => redis.ping()] : [],
+  rateLimitStore: redis
+    ? (name) =>
+        new RateLimitStore({
+          prefix: `game:rl:${name}:`,
+          sendCommand: (...args) => redis.sendCommand(args),
+        })
+    : undefined,
   secureCookies: config.secureCookies,
   allowedOrigins: config.allowedOrigins,
   docs: !config.production,

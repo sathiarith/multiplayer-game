@@ -57,6 +57,7 @@ Deferred:
   behind a reverse proxy, or every client looks like one address.
 - The default Content-Security-Policy suits an API. Revisit it when the
   server also serves the web client.
+- Redis listens on localhost only and has no password. Production needs a password and TLS (Sprint 9).
 
 ## A03 Software Supply Chain Failures
 
@@ -124,6 +125,7 @@ Handled:
   (`UNIQUE`, foreign keys), not only in client code.
 - Game clients send inputs only, never positions. Messages over 1024 bytes close the connection, every message costs a token (40 a second, bursts of 60), and malformed inputs, unknown events, and over-limit messages are violations. 20 violations within 10 seconds disconnect the client. The rules are in `docs/protocol.md`, and a test fails if the document and the code disagree.
 - The server owns each character’s position and health. They are saved from the server’s own state every 30 seconds and when a player leaves, and no REST endpoint accepts a position.
+- Change the rate-limit bullet to say the counters for login and registration are kept in Redis, so they survive a restart and would be shared by every server process.
 
 Accepted trade-offs:
 
@@ -147,6 +149,7 @@ Handled:
 - Cookies are `HttpOnly` and `SameSite=Lax`.
 - At most 10 failed logins per IP per 15 minutes.
 - Passwords need 10 to 72 bytes.
+- Rate-limit line counted in Redis.
 
 Evidence: `auth.test.js`, `security.test.js`. The timing equality was
 checked by hand (an experiment in Sprint 2), not by an automated test, because
@@ -154,8 +157,7 @@ timing tests are unreliable.
 
 Deferred:
 
-- Sessions are in memory, so a restart logs everyone out (Redis in Sprint 6).
-- Rate limits are per IP and in memory. There is no per-account lockout.
+- Rate limits are per IP. There is no per-account lockout.
 - No multi-factor authentication, password reset, password change, breached-password
   check, or idle timeout.
 
@@ -214,7 +216,6 @@ Deferred:
 
 | Item                                                  | Planned     |
 | ----------------------------------------------------- | ----------- |
-| Redis sessions and shared rate limits                 | Sprint 6    |
 | Escape chat messages in the client                    | Sprint 7    |
 | TLS, `trust proxy`, `Secure` cookies                  | Sprint 9    |
 | Dependency scanning in CI                             | Sprint 9    |
@@ -223,6 +224,7 @@ Deferred:
 | Per-account lockout, MFA, password reset              | Not planned |
 | Connection-rate limits per IP and per user            | Sprint 9    |
 | Full graceful shutdown (timeouts, finishing requests) | Sprint 9    |
+| Redis password and TLS                                | Sprint 9    |
 
 ## How to re-check
 
