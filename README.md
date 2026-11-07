@@ -33,3 +33,4 @@ to download them and which files go in `client/public/sprites/`.
 1. In `server/`: copy `.env.example` to `.env`, then `npm install` and `npm run dev`.
 2. In `client/`: `npm install` and `npm run dev`.
 3. Open http://127.0.0.1:5173.
+4. Start Redis with `docker run -d --name game-redis -p 127.0.0.1:6379:6379 redis:7`, and set `REDIS_URL in server/.env`.
