@@ -225,6 +225,28 @@ paths:
           $ref: "#/components/responses/PayloadTooLarge"
         "500":
           $ref: "#/components/responses/ServerError"
+  /api/leaderboard:
+    get:
+      tags: [Characters]
+      summary: The highest scores
+      description: |
+        The ten highest scores, best first. A character earns one point for
+        every tile it walks, counted on the server. Equal scores are listed
+        lower id first. Only the rank, name, level and score are shown.
+      responses:
+        "200":
+          description: Up to ten entries, empty when nobody has scored.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 10
+                items:
+                  $ref: "#/components/schemas/LeaderboardEntry"
+        "401":
+          $ref: "#/components/responses/NotAuthenticated"
+        "500":
+          $ref: "#/components/responses/ServerError"
 
 components:
   securitySchemes:
@@ -287,7 +309,7 @@ components:
           default: warrior
     Character:
       type: object
-      required: [id, name, class, level, hp, x, y]
+      required: [id, name, class, level, hp, score, x, y]
       properties:
         id:
           type: integer
@@ -300,10 +322,27 @@ components:
           type: integer
         hp:
           type: integer
+        score:
+          type: integer
+          description: One point for every tile walked.
         x:
           type: number
         y:
           type: number
+    LeaderboardEntry:
+      type: object
+      required: [rank, name, level, score]
+      properties:
+        rank:
+          type: integer
+          minimum: 1
+        name:
+          type: string
+        level:
+          type: integer
+        score:
+          type: integer
+          description: One point for every tile walked.
     HealthOk:
       type: object
       required: [status, uptime]

@@ -21,6 +21,7 @@ import helmet from "helmet";
 import { rateLimit } from "express-rate-limit";
 import cors from "cors";
 import { createDocsRouter } from "./docs.js";
+import { createLeaderboard, TOP_N } from "./leaderboard.js";
 
 export const COOKIE_NAME = "sid";
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -105,6 +106,7 @@ export function createApp(
     logger = createLogger({ level: "silent" }),
     rateLimits = {},
     rateLimitStore, // optional: (name) => a store for express-rate-limit; undefined means in memory
+    leaderboard = createLeaderboard({ db }), // reads the database unless a Redis-backed one is given
     docs = false,
     allowedOrigins = [],
     sessionStore, // undefined means express-session's in-memory store
@@ -259,6 +261,10 @@ export function createApp(
 
   app.get("/api/me", requireAuth, (req, res) => {
     res.json(req.user);
+  });
+
+  app.get("/api/leaderboard", requireAuth, async (req, res) => {
+    res.json(await leaderboard.top(TOP_N));
   });
 
   app.get("/api/characters", requireAuth, (req, res) => {

@@ -23,6 +23,7 @@ export function attachRealtime(
     level = sharedLevel,
     tickMs = 1000 / TICK_RATE,
     saveEveryMs = PROTOCOL.saveEveryMs,
+    leaderboard, // optional: told about every score that is saved
     guard = {}, // tests pass smaller limits
   },
 ) {
@@ -61,6 +62,7 @@ export function attachRealtime(
     ownerOf: (characterId) => online.get(characterId)?.data.user.id,
     logger,
     intervalMs: saveEveryMs,
+    onSaved: (id, state) => leaderboard?.update(id, state.score),
   });
   persistence.start();
 

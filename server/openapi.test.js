@@ -129,6 +129,7 @@ test("responses seen in practice are all documented", async () => {
   // Not logged in
   seen(await anon.get("/api/me"), 401, "get", "/api/me");
   seen(await anon.get("/api/characters"), 401, "get", "/api/characters");
+  seen(await anon.get("/api/leaderboard"), 401, "get", "/api/leaderboard");
   seen(
     await anon.post("/api/characters").send({ name: "Aria" }),
     401,
@@ -141,6 +142,7 @@ test("responses seen in practice are all documented", async () => {
   seen(await agent.post("/api/login").send(ALICE), 200, "post", "/api/login");
   seen(await agent.get("/api/me"), 200, "get", "/api/me");
   seen(await agent.get("/api/characters"), 200, "get", "/api/characters");
+  seen(await agent.get("/api/leaderboard"), 200, "get", "/api/leaderboard");
   seen(
     await agent.post("/api/characters").send({}),
     400,

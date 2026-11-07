@@ -28,6 +28,7 @@ Handled:
 - Cross-site requests are refused: a CORS allowlist with no wildcard, plus an
   `Origin` check on every state-changing request (`originGuard`).
 - The WebSocket handshake checks `Origin` against the same allowlist as the REST guard, because browsers do not apply CORS to WebSockets. The user comes only from the session, and a character is checked for ownership exactly as in REST.
+- `GET /api/leaderboard` requires login and shows only rank, name, level and score: no ids and no usernames.
 
 Evidence: the intruder test in `characters.api.test.js`, the forged-request
 tests in `security.test.js`, and the id test in `validation.api.test.js`.
@@ -126,6 +127,7 @@ Handled:
 - Game clients send inputs only, never positions. Messages over 1024 bytes close the connection, every message costs a token (40 a second, bursts of 60), and malformed inputs, unknown events, and over-limit messages are violations. 20 violations within 10 seconds disconnect the client. The rules are in `docs/protocol.md`, and a test fails if the document and the code disagree.
 - The server owns each character’s position and health. They are saved from the server’s own state every 30 seconds and when a player leaves, and no REST endpoint accepts a position.
 - Change the rate-limit bullet to say the counters for login and registration are kept in Redis, so they survive a restart and would be shared by every server process.
+- The score is counted by the server from the movement it applied, so a client cannot report one. The leaderboard’s Redis index is rebuilt from the database, which stays the source of truth.
 
 Accepted trade-offs:
 
@@ -136,6 +138,7 @@ Deferred:
 
 - Server-authoritative game state (Sprint 5).
 - Limits on connection attempts per IP and a cap on connections per user (Sprint 9, behind the reverse proxy); a timeout for sockets that open but never finish the handshake.
+- The leaderboard endpoint has no limit of its own on how often a logged-in player can call it. A score earned by walking is a placeholder until combat arrives (Sprint 7).
 
 ## A07 Authentication Failures
 

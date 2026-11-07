@@ -11,8 +11,12 @@ export async function startRealtime({
   saveEveryMs = 60_000,
   logger,
   appOptions = {},
+  makeLeaderboard,
 } = {}) {
-  const { app, db } = createTestApp(appOptions);
+  const { app, db, leaderboard } = createTestApp({
+    ...appOptions,
+    makeLeaderboard,
+  });
   const httpServer = createServer(app);
   const io = attachRealtime(httpServer, {
     app,
@@ -22,6 +26,7 @@ export async function startRealtime({
     guard,
     saveEveryMs,
     logger,
+    leaderboard,
   });
   await new Promise((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
   const url = `http://127.0.0.1:${httpServer.address().port}`;

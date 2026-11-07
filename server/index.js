@@ -8,6 +8,7 @@ import { connectRedis } from "./redis.js";
 import { createApp } from "./app.js";
 import { attachRealtime } from "./realtime.js";
 import { RedisStore as RateLimitStore } from "rate-limit-redis";
+import { createLeaderboard } from "./leaderboard.js";
 
 const config = loadConfig(); // throws with a clear message if settings are wrong
 const logger = createLogger({ level: config.logLevel });
@@ -38,6 +39,15 @@ if (config.redisUrl) {
   );
 }
 
+// The database holds the scores. With Redis, an index of them is kept up to date.
+const leaderboard = createLeaderboard({ db, redis, logger });
+await leaderboard.rebuild().catch((err) => {
+  logger.warn(
+    { message: err.message },
+    "could not build the leaderboard in Redis",
+  );
+});
+
 const app = createApp(db, {
   sessionSecret,
   sessionStore,
@@ -53,6 +63,7 @@ const app = createApp(db, {
   allowedOrigins: config.allowedOrigins,
   docs: !config.production,
   logger,
+  leaderboard,
 });
 
 const httpServer = createServer(app);
@@ -61,6 +72,7 @@ const io = attachRealtime(httpServer, {
   db,
   allowedOrigins: config.allowedOrigins,
   logger,
+  leaderboard,
 });
 
 httpServer.listen(config.port, config.host, () => {
