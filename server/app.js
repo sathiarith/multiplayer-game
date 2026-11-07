@@ -106,6 +106,8 @@ export function createApp(
     rateLimits = {},
     docs = false,
     allowedOrigins = [],
+    sessionStore, // undefined means express-session's in-memory store
+    healthChecks = [], // async functions that throw when a dependency is down
   } = {},
 ) {
   if (!sessionSecret) throw new Error("sessionSecret is required");
@@ -168,10 +170,10 @@ export function createApp(
   // Development only: the interactive API documentation.
   if (docs) app.use("/api/docs", createDocsRouter());
 
-  // Before the session middleware, so polling never creates a session.
-  app.get("/health", (req, res) => {
+  app.get("/health", async (req, res) => {
     try {
       db.prepare("SELECT 1").get();
+      await Promise.all(healthChecks.map((check) => check()));
       res.json({ status: "ok", uptime: Math.floor(process.uptime()) });
     } catch (err) {
       req.log.error({ err }, "health check failed");
@@ -181,6 +183,7 @@ export function createApp(
 
   app.use(express.json({ limit: "10kb" }));
   const sessionMiddleware = session({
+    store: sessionStore,
     name: COOKIE_NAME,
     secret: sessionSecret,
     resave: false,

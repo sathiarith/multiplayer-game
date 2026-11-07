@@ -41,6 +41,7 @@ test("production with a good secret uses secure cookies", () => {
     NODE_ENV: "production",
     SESSION_SECRET: GOOD_SECRET,
     ALLOWED_ORIGINS: "https://game.example.com",
+    REDIS_URL: "redis://cache:6379",
   });
   expect(c).toMatchObject({ production: true, secureCookies: true });
 });
@@ -85,6 +86,7 @@ test("production requires explicit https origins", () => {
   const ok = loadConfig({
     ...prod,
     ALLOWED_ORIGINS: "https://game.example.com",
+    REDIS_URL: "redis://cache:6379",
   });
   expect(ok.allowedOrigins).toEqual(["https://game.example.com"]);
 });
@@ -96,8 +98,50 @@ test("log level defaults by environment and rejects unknown values", () => {
       NODE_ENV: "production",
       SESSION_SECRET: GOOD_SECRET,
       ALLOWED_ORIGINS: "https://game.example.com",
+      REDIS_URL: "redis://cache:6379",
     }).logLevel,
   ).toBe("info");
   expect(loadConfig({ LOG_LEVEL: "warn" }).logLevel).toBe("warn");
   expect(() => loadConfig({ LOG_LEVEL: "loud" })).toThrow(/LOG_LEVEL/);
+});
+
+test("Redis is optional in development and read from REDIS_URL", () => {
+  expect(loadConfig({}).redisUrl).toBeUndefined();
+  expect(loadConfig({ REDIS_URL: "" }).redisUrl).toBeUndefined();
+  expect(loadConfig({ REDIS_URL: "redis://127.0.0.1:6379" }).redisUrl).toBe(
+    "redis://127.0.0.1:6379",
+  );
+  expect(
+    loadConfig({ REDIS_URL: "rediss://cache.example.com:6380" }).redisUrl,
+  ).toBe("rediss://cache.example.com:6380");
+});
+
+test("a malformed REDIS_URL is rejected, and the message never repeats it", () => {
+  for (const REDIS_URL of [
+    "http://secret-host:6379",
+    "localhost:6379",
+    "ftp://user:hunter2@host",
+  ]) {
+    const error = (() => {
+      try {
+        loadConfig({ REDIS_URL });
+      } catch (err) {
+        return err;
+      }
+    })();
+    expect(error.message).toMatch(/REDIS_URL/);
+    expect(error.message).not.toContain(REDIS_URL);
+  }
+});
+
+test("production requires REDIS_URL", () => {
+  const prod = {
+    NODE_ENV: "production",
+    SESSION_SECRET: GOOD_SECRET,
+    ALLOWED_ORIGINS: "https://game.example.com",
+  };
+  expect(() => loadConfig(prod)).toThrow(/REDIS_URL/);
+  expect(
+    loadConfig({ ...prod, REDIS_URL: "redis://cache:6379" }).redisUrl,
+  ).toBe("redis://cache:6379");
 });

@@ -1,8 +1,10 @@
 import crypto from "node:crypto";
 import { createServer } from "node:http";
+import { RedisStore } from "connect-redis";
 import { loadConfig } from "./config.js";
 import { createLogger } from "./logger.js";
 import { openDb } from "./db.js";
+import { connectRedis } from "./redis.js";
 import { createApp } from "./app.js";
 import { attachRealtime } from "./realtime.js";
 
@@ -16,8 +18,29 @@ if (!sessionSecret) {
 }
 
 const db = openDb(config.dbPath);
+
+// With REDIS_URL set, sessions live in Redis and survive a restart.
+// Without it, express-session keeps them in memory.
+let redis = null;
+let sessionStore;
+if (config.redisUrl) {
+  try {
+    redis = await connectRedis(config.redisUrl, { logger });
+  } catch (err) {
+    logger.fatal({ message: err.message }, "cannot start without Redis");
+    process.exit(1);
+  }
+  sessionStore = new RedisStore({ client: redis, prefix: "game:sess:" });
+} else {
+  logger.warn(
+    "REDIS_URL is not set: sessions are kept in memory and are lost on every restart",
+  );
+}
+
 const app = createApp(db, {
   sessionSecret,
+  sessionStore,
+  healthChecks: redis ? [() => redis.ping()] : [],
   secureCookies: config.secureCookies,
   allowedOrigins: config.allowedOrigins,
   docs: !config.production,
@@ -25,7 +48,6 @@ const app = createApp(db, {
 });
 
 const httpServer = createServer(app);
-
 const io = attachRealtime(httpServer, {
   app,
   db,
@@ -43,6 +65,9 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
   process.once(signal, () => {
     logger.info({ signal }, "shutting down");
     setTimeout(() => process.exit(1), 5000).unref(); // do not hang forever
-    io.close(() => process.exit(0));
+    io.close(async () => {
+      await redis?.close();
+      process.exit(0);
+    });
   });
 }

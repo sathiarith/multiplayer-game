@@ -10,8 +10,9 @@ export async function startRealtime({
   guard,
   saveEveryMs = 60_000,
   logger,
+  appOptions = {},
 } = {}) {
-  const { app, db } = createTestApp();
+  const { app, db } = createTestApp(appOptions);
   const httpServer = createServer(app);
   const io = attachRealtime(httpServer, {
     app,

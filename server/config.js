@@ -69,6 +69,17 @@ export function loadConfig(env = process.env) {
     throw new Error("ALLOWED_ORIGINS must use https:// in production");
   }
 
+  const redisUrl = env.REDIS_URL || undefined;
+  if (redisUrl && !/^rediss?:\/\//.test(redisUrl)) {
+    // The URL can contain a password, so the message never repeats it.
+    throw new Error(
+      "Invalid REDIS_URL: it must start with redis:// or rediss://",
+    );
+  }
+  if (production && !redisUrl) {
+    throw new Error("REDIS_URL must be set in production");
+  }
+
   return {
     nodeEnv,
     production,
@@ -79,5 +90,6 @@ export function loadConfig(env = process.env) {
     sessionSecret, // may be undefined in development; index.js generates one
     secureCookies: production, // only send cookies over HTTPS in production
     allowedOrigins,
+    redisUrl,
   };
 }
