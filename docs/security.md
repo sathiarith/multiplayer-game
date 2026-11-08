@@ -1,7 +1,7 @@
 # Security notes
 
-Last reviewed: 2026-10-27
-Scope: the Express API in `server/` as of Sprint 3.
+Last reviewed: 2026-11-07
+Scope: the Express API in `server/` as of Sprint 6.
 Framework: OWASP Top 10:2025.
 
 This is a developer self-review, not an audit. Each category says what is
@@ -13,25 +13,31 @@ handled, where the evidence is, and what is deliberately deferred.
 - Attackers considered: anonymous users on the internet, logged-in players who
   cheat or try to read other players' data, and a malicious website that a
   logged-in player visits.
-- Not yet covered: the browser client (Sprint 4), WebSockets (Sprint 5),
-  Redis (Sprint 6), containers and deployment (Sprints 8 and 9).
+- Not yet covered: chat and combat (Sprint 7), containers and deployment
+  (Sprints 8 and 9).
 
 ## A01 Broken Access Control
 
 Handled:
 
 - Every route except register, login, and `/health` goes through `requireAuth`.
-- Looking up a character for the game connection and saving its state both use `WHERE id = ?` AND `user_id = ?`.
-- A character that isn’t yours gets the same `not_found` refusal as one that doesn’t exist, and that ids in the handshake are parsed with `parseId` (plain digits only).
-- Ids in URLs accept plain digits only (`parseId`), so `1e2` and `0x10` cannot
-  turn into other ids.
+- Looking up a character for the game connection and saving its state both use
+  `WHERE id = ? AND user_id = ?`.
+- A character that isn't yours gets the same `not_found` refusal as one that
+  doesn't exist. Ids in the handshake are parsed with `parseId` (plain digits
+  only).
 - Cross-site requests are refused: a CORS allowlist with no wildcard, plus an
   `Origin` check on every state-changing request (`originGuard`).
-- The WebSocket handshake checks `Origin` against the same allowlist as the REST guard, because browsers do not apply CORS to WebSockets. The user comes only from the session, and a character is checked for ownership exactly as in REST.
-- `GET /api/leaderboard` requires login and shows only rank, name, level and score: no ids and no usernames.
+- The WebSocket handshake checks `Origin` against the same allowlist as the
+  REST guard, because browsers do not apply CORS to WebSockets. The user comes
+  only from the session, and a character is checked for ownership exactly as
+  in REST.
+- `GET /api/leaderboard` requires login and shows only rank, name, level and
+  score: no ids and no usernames.
 
-Evidence: the intruder test in `characters.api.test.js`, the forged-request
-tests in `security.test.js`, and the id test in `validation.api.test.js`.
+Evidence: `realtime.test.js` (the ownership and handshake tests),
+`characters.test.js` (`findCharacter` and `saveCharacterState`), and the
+forged-request tests in `security.test.js`.
 
 Deferred:
 
@@ -45,7 +51,8 @@ Handled:
 - `helmet` sets security headers on every response, and `X-Powered-By` is removed.
 - Configuration is validated at startup (`config.js`). In production the server
   refuses to start without a 32+ character `SESSION_SECRET`, with `https://`
-  origins in `ALLOWED_ORIGINS`, and it turns on `Secure` cookies.
+  origins in `ALLOWED_ORIGINS`, and with a `REDIS_URL`, and it turns on
+  `Secure` cookies.
 - Secrets live in `.env`, which is git-ignored. `.env.example` holds placeholders only.
 - The server listens on `127.0.0.1` unless `HOST` says otherwise.
 - Unexpected errors return a generic message, never a stack trace.
@@ -58,7 +65,8 @@ Deferred:
   behind a reverse proxy, or every client looks like one address.
 - The default Content-Security-Policy suits an API. Revisit it when the
   server also serves the web client.
-- Redis listens on localhost only and has no password. Production needs a password and TLS (Sprint 9).
+- Redis listens on localhost only and has no password. Production needs a
+  password and TLS (Sprint 9).
 
 ## A03 Software Supply Chain Failures
 
@@ -68,12 +76,13 @@ Handled:
 - npm blocks dependency install scripts by default. Only `better-sqlite3`
   (it needs a native binary) is allowed, through `allowScripts` in
   `server/package.json`.
-- `npm audit` findings are reviewed, not auto-fixed with `--force`. The one
-  known finding is in the `serve` development tool, which was replaced by
-  `http-server`.
+- `npm audit` findings are reviewed, not auto-fixed with `--force`.
 - Third-party art is credited in `CREDITS.md` and kept out of git, as its
   license requires.
-- `npm audit` is reviewed on every dependency change. A high-severity `body-parser` advisory (denial of service through compressed request bodies) was fixed by a minor update. The Swagger UI dependency tree includes `@scarf/scarf`, whose analytics install script is denied in `allowScripts`.
+- `npm audit` is reviewed on every dependency change. A high-severity
+  `body-parser` advisory (denial of service through compressed request bodies)
+  was fixed by a minor update. The Swagger UI dependency tree includes
+  `@scarf/scarf`, whose analytics install script is denied in `allowScripts`.
 
 Deferred:
 
@@ -106,7 +115,8 @@ Handled:
   list written in code, never user input.
 - Input is validated with strict zod schemas before it reaches any query.
 - Tests store SQL fragments as ordinary usernames and character names.
-- The server renders no HTML. The in-game HUD uses `textContent`, not `innerHTML`.
+- The server renders no HTML. The client shows text through React, which
+  escapes it, and nothing uses `innerHTML` or `dangerouslySetInnerHTML`.
 
 Evidence: `users.test.js`, `characters.test.js`, `validation.test.js`.
 
@@ -118,16 +128,25 @@ Deferred:
 
 Handled:
 
-- Rate limits on login and registration, and a per-user character limit that
-  runs inside a transaction.
+- Rate limits on login and registration, counted in Redis so they survive a
+  restart and would be shared by every server process, and a per-user
+  character limit that runs inside a transaction.
 - Unknown fields are rejected, which prevents mass assignment (for example
   creating a character with a chosen level or HP).
 - Rules that must not be bypassable live in the server and in the database
   (`UNIQUE`, foreign keys), not only in client code.
-- Game clients send inputs only, never positions. Messages over 1024 bytes close the connection, every message costs a token (40 a second, bursts of 60), and malformed inputs, unknown events, and over-limit messages are violations. 20 violations within 10 seconds disconnect the client. The rules are in `docs/protocol.md`, and a test fails if the document and the code disagree.
-- The server owns each character’s position and health. They are saved from the server’s own state every 30 seconds and when a player leaves, and no REST endpoint accepts a position.
-- Change the rate-limit bullet to say the counters for login and registration are kept in Redis, so they survive a restart and would be shared by every server process.
-- The score is counted by the server from the movement it applied, so a client cannot report one. The leaderboard’s Redis index is rebuilt from the database, which stays the source of truth.
+- Game clients send inputs only, never positions. Messages over 1024 bytes
+  close the connection, every message costs a token (40 a second, bursts of
+  60), and malformed inputs, unknown events, and over-limit messages are
+  violations. 20 violations within 10 seconds disconnect the client. The rules
+  are in `docs/protocol.md`, and a test fails if the document and the code
+  disagree.
+- The server owns each character's position and health. They are saved from
+  the server's own state every 30 seconds and when a player leaves, and no
+  REST endpoint accepts a position.
+- The score is counted by the server from the movement it applied, so a client
+  cannot report one. The leaderboard's Redis index is rebuilt from the
+  database, which stays the source of truth.
 
 Accepted trade-offs:
 
@@ -136,9 +155,12 @@ Accepted trade-offs:
 
 Deferred:
 
-- Server-authoritative game state (Sprint 5).
-- Limits on connection attempts per IP and a cap on connections per user (Sprint 9, behind the reverse proxy); a timeout for sockets that open but never finish the handshake.
-- The leaderboard endpoint has no limit of its own on how often a logged-in player can call it. A score earned by walking is a placeholder until combat arrives (Sprint 7).
+- Limits on connection attempts per IP and a cap on connections per user
+  (Sprint 9, behind the reverse proxy); a timeout for sockets that open but
+  never finish the handshake.
+- The leaderboard endpoint has no limit of its own on how often a logged-in
+  player can call it. A score earned by walking is a placeholder until combat
+  arrives (Sprint 7).
 
 ## A07 Authentication Failures
 
@@ -149,14 +171,16 @@ Handled:
   response times are similar.
 - A new session id is issued at login (prevents session fixation). Logout
   destroys the server-side session, so a copied cookie stops working.
+- Sessions are stored in Redis (`game:sess:`, seven-day expiry), so a restart
+  does not log anyone out.
 - Cookies are `HttpOnly` and `SameSite=Lax`.
-- At most 10 failed logins per IP per 15 minutes.
+- At most 10 failed logins per IP per 15 minutes, counted in Redis.
 - Passwords need 10 to 72 bytes.
-- Rate-limit line counted in Redis.
 
-Evidence: `auth.test.js`, `security.test.js`. The timing equality was
-checked by hand (an experiment in Sprint 2), not by an automated test, because
-timing tests are unreliable.
+Evidence: `auth.test.js`, `security.test.js`, `sessions.test.js`, and
+`rate-limit-store.test.js`. The timing equality was checked by hand (an
+experiment in Sprint 2), not by an automated test, because timing tests are
+unreliable.
 
 Deferred:
 
@@ -203,7 +227,7 @@ Handled:
 - Errors in async routes reach the handler (Express 5), and the handler
   passes the error on if a response has already started.
 - Configuration errors stop the server at startup, and `/health` returns 503
-  when the database is unusable.
+  when the database or Redis is unusable.
 - The interactive API documentation (`/api/docs`) is only mounted outside
   production, and it has its own Content-Security-Policy.
 
