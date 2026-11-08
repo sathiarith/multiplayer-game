@@ -56,6 +56,7 @@ Handled:
 - Secrets live in `.env`, which is git-ignored. `.env.example` holds placeholders only.
 - The server listens on `127.0.0.1` unless `HOST` says otherwise.
 - Unexpected errors return a generic message, never a stack trace.
+- End-to-end tests run on separate ports with their own database and Redis database 15, and a flush only ever touches that database.
 
 Evidence: `config.test.js`, `security.test.js`, `errors.test.js`.
 
