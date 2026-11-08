@@ -281,3 +281,15 @@ test("the HUD follows my predicted character, and only when its values change", 
   expect(onHud).toHaveBeenCalledTimes(3);
   expect(onHud.mock.lastCall[0].hp).toBe(70);
 });
+
+test("latestPlayers gives the newest snapshot's players", () => {
+  const { connection, game } = setup();
+  game.start();
+  expect(game.latestPlayers()).toEqual([]);
+
+  connection.push(snap(1, [mine(100), other(140)]));
+  expect(game.latestPlayers().map((p) => p.name)).toEqual(["Aria", "Borin"]);
+
+  connection.push(snap(2, [mine(110)]));
+  expect(game.latestPlayers().map((p) => p.name)).toEqual(["Aria"]);
+});
