@@ -34,7 +34,13 @@ export default function GameCanvas({ character, connection }) {
       onHud: setHud,
     });
     game.start();
-    return () => game.stop();
+    // Development builds only: a read-only view for the end-to-end tests, because
+    // a canvas cannot be read like the rest of the page. `vite build` removes it.
+    if (import.meta.env.DEV) window.__game = { players: game.latestPlayers };
+    return () => {
+      game.stop();
+      if (import.meta.env.DEV) delete window.__game;
+    };
   }, [sheets, connection, character.id]);
 
   const width = level.tiles[0].length * level.tileSize;

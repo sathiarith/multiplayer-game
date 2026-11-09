@@ -44,6 +44,7 @@ export function createNetworkGame({
   let seq = 0;
   let lastSent = IDLE;
   let lastHud = null;
+  let latest = []; // the newest snapshot's players, for debugging and the end-to-end tests
 
   // Input: only record what is held. Nothing moves here.
   const onKeyDown = (e) => {
@@ -81,6 +82,7 @@ export function createNetworkGame({
   }
 
   function onSnapshot({ players }) {
+    latest = players;
     buffer.push(env.now(), players);
     const mine = players.find((p) => p.id === you);
     if (mine) {
@@ -162,6 +164,7 @@ export function createNetworkGame({
   }
 
   return {
+    latestPlayers: () => latest,
     start() {
       if (running) return; // never run two loops
       running = true;
