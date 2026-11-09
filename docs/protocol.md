@@ -19,6 +19,7 @@ that this page lists every event and states the same limits as the code.
   which is told with `replaced` and closed. The player keeps their place in
   the world.
 - **Logging out** closes every connection that belongs to that session.
+- One server owns each world. See `docs/decisions/0003-scaling-the-game-server.md`.
 
 ## Refusals
 
