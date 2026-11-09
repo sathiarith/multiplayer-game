@@ -145,3 +145,16 @@ test("production requires REDIS_URL", () => {
     loadConfig({ ...prod, REDIS_URL: "redis://cache:6379" }).redisUrl,
   ).toBe("redis://cache:6379");
 });
+
+test("the Socket.IO adapter is off unless asked for, and needs Redis", () => {
+  expect(loadConfig({}).socketAdapter).toBe("none");
+  expect(loadConfig({ SOCKET_ADAPTER: "none" }).socketAdapter).toBe("none");
+  expect(
+    loadConfig({ SOCKET_ADAPTER: "redis", REDIS_URL: "redis://127.0.0.1:6379" })
+      .socketAdapter,
+  ).toBe("redis");
+  expect(() => loadConfig({ SOCKET_ADAPTER: "redis" })).toThrow(/REDIS_URL/);
+  expect(() => loadConfig({ SOCKET_ADAPTER: "kafka" })).toThrow(
+    /SOCKET_ADAPTER/,
+  );
+});

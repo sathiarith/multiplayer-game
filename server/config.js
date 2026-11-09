@@ -80,6 +80,14 @@ export function loadConfig(env = process.env) {
     throw new Error("REDIS_URL must be set in production");
   }
 
+  const socketAdapter = env.SOCKET_ADAPTER ?? "none";
+  if (!["none", "redis"].includes(socketAdapter)) {
+    throw new Error("SOCKET_ADAPTER must be none or redis");
+  }
+  if (socketAdapter === "redis" && !redisUrl) {
+    throw new Error("SOCKET_ADAPTER=redis requires REDIS_URL");
+  }
+
   return {
     nodeEnv,
     production,
@@ -91,5 +99,6 @@ export function loadConfig(env = process.env) {
     secureCookies: production, // only send cookies over HTTPS in production
     allowedOrigins,
     redisUrl,
+    socketAdapter,
   };
 }

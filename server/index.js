@@ -1,14 +1,15 @@
 import crypto from "node:crypto";
 import { createServer } from "node:http";
 import { RedisStore } from "connect-redis";
+import { RedisStore as RateLimitStore } from "rate-limit-redis";
+import { createAdapter } from "@socket.io/redis-adapter";
 import { loadConfig } from "./config.js";
 import { createLogger } from "./logger.js";
 import { openDb } from "./db.js";
 import { connectRedis } from "./redis.js";
+import { createLeaderboard } from "./leaderboard.js";
 import { createApp } from "./app.js";
 import { attachRealtime } from "./realtime.js";
-import { RedisStore as RateLimitStore } from "rate-limit-redis";
-import { createLeaderboard } from "./leaderboard.js";
 
 const config = loadConfig(); // throws with a clear message if settings are wrong
 const logger = createLogger({ level: config.logLevel });
@@ -48,6 +49,26 @@ await leaderboard.rebuild().catch((err) => {
   );
 });
 
+// Experiment from Story 6.4. With SOCKET_ADAPTER=redis, every broadcast reaches
+// the clients of every server, but each server still runs its own world.
+let adapter;
+let adapterClients = [];
+if (config.socketAdapter === "redis") {
+  const publisher = redis.duplicate();
+  const subscriber = redis.duplicate();
+  for (const client of [publisher, subscriber]) {
+    client.on("error", (err) =>
+      logger.error({ message: err.message }, "redis adapter error"),
+    );
+  }
+  await Promise.all([publisher.connect(), subscriber.connect()]);
+  adapter = createAdapter(publisher, subscriber, { key: "game:io" });
+  adapterClients = [publisher, subscriber];
+  logger.warn(
+    "Socket.IO Redis adapter is on: broadcasts reach every server, but each runs its own world",
+  );
+}
+
 const app = createApp(db, {
   sessionSecret,
   sessionStore,
@@ -59,11 +80,11 @@ const app = createApp(db, {
           sendCommand: (...args) => redis.sendCommand(args),
         })
     : undefined,
+  leaderboard,
   secureCookies: config.secureCookies,
   allowedOrigins: config.allowedOrigins,
   docs: !config.production,
   logger,
-  leaderboard,
 });
 
 const httpServer = createServer(app);
@@ -73,6 +94,7 @@ const io = attachRealtime(httpServer, {
   allowedOrigins: config.allowedOrigins,
   logger,
   leaderboard,
+  adapter,
 });
 
 httpServer.listen(config.port, config.host, () => {
@@ -86,7 +108,9 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
     logger.info({ signal }, "shutting down");
     setTimeout(() => process.exit(1), 5000).unref(); // do not hang forever
     io.close(async () => {
-      await redis?.close();
+      await Promise.all(
+        [redis, ...adapterClients].map((client) => client?.close()),
+      );
       process.exit(0);
     });
   });
