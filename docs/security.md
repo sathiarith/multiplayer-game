@@ -148,6 +148,7 @@ Handled:
 - The score is counted by the server from the movement it applied, so a client
   cannot report one. The leaderboard's Redis index is rebuilt from the
   database, which stays the source of truth.
+- The Socket.IO Redis adapter is off by default, because enabling it would make every server’s broadcasts reach every server’s players. The reasoning is in `docs/decisions/0003-scaling-the-game-server.md`.
 
 Accepted trade-offs:
 

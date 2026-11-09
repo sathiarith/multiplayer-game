@@ -24,6 +24,7 @@ export function attachRealtime(
     tickMs = 1000 / TICK_RATE,
     saveEveryMs = PROTOCOL.saveEveryMs,
     leaderboard, // optional: told about every score that is saved
+    adapter, // optional: a Socket.IO adapter (the Redis one, for the experiment). Undefined means in memory.
     guard = {}, // tests pass smaller limits
   },
 ) {
@@ -45,6 +46,7 @@ export function attachRealtime(
       const origin = req.headers.origin;
       callback(null, origin === undefined || allowedOrigins.includes(origin));
     },
+    ...(adapter ? { adapter } : {}),
   });
 
   // Run the Express session middleware on the handshake request, so that
