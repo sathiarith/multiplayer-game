@@ -63,3 +63,9 @@ test("a kicked player is told why, and can reconnect by choice", () => {
   expect(info.text).toMatch(/too many messages/i);
   expect(info.retryLabel).toBe("Reconnect");
 });
+
+test("the ended message names both a logout and a login in another tab", () => {
+  const { text } = describeConnection({ status: "ended" });
+  expect(text).toMatch(/log out/i);
+  expect(text).toMatch(/log in again/i);
+});

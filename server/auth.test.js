@@ -1,4 +1,4 @@
-import { test, expect, beforeEach, afterEach } from "vitest";
+import { test, expect, beforeEach, afterEach, vi } from "vitest";
 import request from "supertest";
 import { createTestApp, ALICE } from "./test-helpers.js";
 
@@ -78,4 +78,43 @@ test("logout ends the session, and the old cookie cannot be reused", async () =>
 
   const replay = await request(app).get("/api/me").set("Cookie", stolen);
   expect(replay.status).toBe(401);
+});
+
+// The session id inside a "sid" cookie: s%3A<id>.<signature>
+const sessionIdOf = (res) =>
+  decodeURIComponent(res.headers["set-cookie"][0].split(";")[0].split("=")[1])
+    .slice(2)
+    .split(".")[0];
+
+test("a login that replaces a session reports the old session as ended", async () => {
+  const { app } = createTestApp();
+  const ended = vi.fn();
+  app.locals.onSessionEnded = ended;
+  const agent = request.agent(app);
+  await agent.post("/api/register").send(ALICE);
+
+  const first = await agent.post("/api/login").send(ALICE);
+  expect(ended).not.toHaveBeenCalled(); // there was no earlier session
+
+  await agent.post("/api/login").send(ALICE); // the agent sends the first cookie
+
+  expect(ended).toHaveBeenCalledTimes(1);
+  expect(ended).toHaveBeenCalledWith(sessionIdOf(first));
+});
+
+test("a failed login leaves the existing session and its game alone", async () => {
+  const { app } = createTestApp();
+  const ended = vi.fn();
+  app.locals.onSessionEnded = ended;
+  const agent = request.agent(app);
+  await agent.post("/api/register").send(ALICE);
+  await agent.post("/api/login").send(ALICE);
+
+  const wrong = await agent
+    .post("/api/login")
+    .send({ ...ALICE, password: "definitely-not-it" });
+
+  expect(wrong.status).toBe(401);
+  expect(ended).not.toHaveBeenCalled();
+  expect((await agent.get("/api/me")).status).toBe(200);
 });

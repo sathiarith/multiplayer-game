@@ -5,7 +5,9 @@ import { io } from "socket.io-client";
 
 const [userA, passA, charA, userB, passB, charB] = process.argv.slice(2);
 if (!charB) {
-  console.error("Usage: node scripts/try-adapter.js <userA> <passA> <charA> <userB> <passB> <charB>");
+  console.error(
+    "Usage: node scripts/try-adapter.js <userA> <passA> <charA> <userB> <passB> <charB>",
+  );
   process.exit(1);
 }
 const urlA = process.env.URL_A ?? "http://127.0.0.1:3001";
@@ -17,7 +19,8 @@ async function connect(url, username, password, characterId) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username, password }),
   });
-  if (!login.ok) throw new Error(`Login failed on ${url}: HTTP ${login.status}`);
+  if (!login.ok)
+    throw new Error(`Login failed on ${url}: HTTP ${login.status}`);
   const cookie = login.headers.getSetCookie()[0].split(";")[0];
 
   const worlds = new Map(); // "1" or "1,2" -> how many snapshots listed exactly those players
@@ -28,12 +31,17 @@ async function connect(url, username, password, characterId) {
     reconnection: false,
   });
   socket.on("snapshot", ({ players }) => {
-    const key = players.map((p) => p.id).sort((a, b) => a - b).join(",");
+    const key = players
+      .map((p) => p.id)
+      .sort((a, b) => a - b)
+      .join(",");
     worlds.set(key, (worlds.get(key) ?? 0) + 1);
   });
   await new Promise((resolve, reject) => {
     socket.once("welcome", resolve);
-    socket.once("connect_error", (err) => reject(new Error(err.data?.code ?? err.message)));
+    socket.once("connect_error", (err) =>
+      reject(new Error(err.data?.code ?? err.message)),
+    );
   });
   return { socket, worlds, label: `${username} on ${url}` };
 }
@@ -46,7 +54,8 @@ await new Promise((resolve) => setTimeout(resolve, 2000));
 
 for (const client of clients) {
   console.log(client.label);
-  for (const [key, count] of client.worlds) console.log(`  players [${key}]: ${count} snapshots`);
+  for (const [key, count] of client.worlds)
+    console.log(`  players [${key}]: ${count} snapshots`);
   client.socket.close();
 }
 console.log(
