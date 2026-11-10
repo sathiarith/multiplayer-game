@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import * as api from "./api.js";
+import { useAuth } from "./auth.jsx";
 
 export function useCharacters() {
+  const { user } = useAuth();
+  const userId = user?.id;
   const [state, setState] = useState({
     status: "loading",
     characters: [],
@@ -18,13 +21,16 @@ export function useCharacters() {
     }
   }, []);
 
+  // Load again whenever the logged-in user changes (for example after a login
+  // in another tab), and never show one user's list under another user's name.
   useEffect(() => {
     let current = true;
+    setState({ status: "loading", characters: [], error: null });
     load(() => current);
     return () => {
       current = false;
     };
-  }, [load]);
+  }, [load, userId]);
 
   const reload = useCallback(() => {
     setState({ status: "loading", characters: [], error: null });
