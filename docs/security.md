@@ -179,6 +179,7 @@ Handled:
 - At most 10 failed logins per IP per 15 minutes, counted in Redis.
 - Passwords need 10 to 72 bytes.
 - A login that replaces an existing session also ends that session’s game connections, so no socket outlives the session that authorised it.
+- Every tab checks who is logged in when it gets focus, and when another tab logs in or out. The message between tabs carries no user data, so the server always answers.
 
 Evidence: `auth.test.js`, `security.test.js`, `sessions.test.js`, and
 `rate-limit-store.test.js`. The timing equality was checked by hand (an
