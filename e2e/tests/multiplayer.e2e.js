@@ -2,12 +2,13 @@ import { test, expect } from "../support/fixtures.js";
 import {
   uniqueName,
   startPlaying,
-  createCharacter,
   play,
   players,
   positionOf,
   waitForPlayers,
   hold,
+  register,
+  logIn,
   PASSWORD,
 } from "../support/helpers.js";
 
@@ -107,19 +108,26 @@ test("logging in again in another tab ends the game in the first", async ({
   await expect(page.getByText(/log in again in another tab/i)).toBeVisible();
 });
 
-// The backlog card "Detect a session change made in another tab". Today the
-// first tab keeps showing the old user until it is reloaded.
-test.fixme("a tab shows the new user after another tab logs in as someone else", async ({
+test("a tab follows a logout and a login made in another tab, without a reload", async ({
   context,
   page,
 }) => {
-  const first = await startPlaying(page);
-  const second = await context.newPage();
+  const first = uniqueName("first");
+  const other = uniqueName("other");
+  await register(page, first);
+  await expect(page.locator("nav")).toContainText(first);
+  await context.request.post("/api/register", {
+    data: { username: other, password: PASSWORD },
+  });
+
+  const second = await context.newPage(); // the same browser: one cookie for both tabs
   await second.goto("/characters");
   await second.getByRole("button", { name: "Log out" }).click();
-  await second.getByRole("link", { name: "Register" }).click();
-  const other = uniqueName("other");
-  await createCharacter(second, uniqueName("Hero")).catch(() => {});
-  await expect(page.locator("nav")).not.toContainText(first.user);
+
+  await expect(page.getByRole("heading", { name: "Log in" })).toBeVisible(); // told by the other tab
+
+  await logIn(second, other);
+
   await expect(page.locator("nav")).toContainText(other);
+  await expect(page.locator("nav")).not.toContainText(first);
 });
