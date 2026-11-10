@@ -246,8 +246,13 @@ export function createApp(
     );
     if (!user || !ok) return res.status(401).json(INVALID_CREDENTIALS);
 
+    // The session this browser had before, if someone was logged in with it.
+    const replacedSessionId = req.session.userId ? req.sessionID : undefined;
     await regenerate(req); // new session ID on privilege change
     req.session.userId = user.id;
+
+    // That session no longer exists, so its game connections must not outlive it.
+    if (replacedSessionId) app.locals.onSessionEnded?.(replacedSessionId);
     return res.json({ id: user.id, username: user.username });
   });
 

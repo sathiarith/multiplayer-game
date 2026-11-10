@@ -8,6 +8,7 @@ import {
   positionOf,
   waitForPlayers,
   hold,
+  PASSWORD,
 } from "../support/helpers.js";
 
 test("two players, each in their own browser, see each other move", async ({
@@ -89,6 +90,21 @@ test("walking earns points that appear on the leaderboard", async ({
       return board.find((entry) => entry.name === name)?.score ?? 0;
     })
     .toBeGreaterThanOrEqual(3);
+});
+
+test("logging in again in another tab ends the game in the first", async ({
+  context,
+  page,
+}) => {
+  await startPlaying(page);
+
+  // The other tab logs in as someone else. It shares this browser's cookie.
+  const other = { username: uniqueName("other"), password: PASSWORD };
+  await context.request.post("/api/register", { data: other });
+  const res = await context.request.post("/api/login", { data: other });
+  expect(res.status()).toBe(200);
+
+  await expect(page.getByText(/log in again in another tab/i)).toBeVisible();
 });
 
 // The backlog card "Detect a session change made in another tab". Today the

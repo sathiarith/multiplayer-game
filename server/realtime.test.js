@@ -548,3 +548,108 @@ test("tiles walked become a score that is saved and shown on the leaderboard", a
   expect(board[0]).toMatchObject({ rank: 1, name: "Aria" });
   expect(board[0].score).toBeGreaterThanOrEqual(1);
 });
+
+const PASSWORD = "correct-horse-battery";
+const postJson = (url, path, body, cookie) =>
+  fetch(url + path, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(cookie ? { Cookie: cookie } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+const cookieOf = (res) => res.headers.getSetCookie()[0].split(";")[0];
+
+test("a login that replaces a session ends that session's game connection", async () => {
+  const alice = await rt.player("alice", "Aria");
+  const { socket } = await rt.open(asPlayer(alice));
+  const closed = new Promise((resolve) => socket.once("disconnect", resolve));
+
+  // Someone else logs in in the same browser, which sends Alice's cookie.
+  await postJson(rt.url, "/api/register", {
+    username: "carol",
+    password: PASSWORD,
+  });
+  const res = await postJson(
+    rt.url,
+    "/api/login",
+    { username: "carol", password: PASSWORD },
+    alice.cookie,
+  );
+
+  expect(res.status).toBe(200);
+  expect(await closed).toBe("io server disconnect");
+});
+
+test("a login without an earlier session disconnects nobody", async () => {
+  const alice = await rt.player("alice", "Aria");
+  const { socket } = await rt.open(asPlayer(alice));
+
+  await postJson(rt.url, "/api/register", {
+    username: "carol",
+    password: PASSWORD,
+  });
+  await postJson(rt.url, "/api/login", {
+    username: "carol",
+    password: PASSWORD,
+  }); // no cookie
+  await wait(200);
+
+  expect(socket.connected).toBe(true);
+});
+
+test("a failed login does not end the game connection", async () => {
+  const alice = await rt.player("alice", "Aria");
+  const { socket } = await rt.open(asPlayer(alice));
+
+  await postJson(rt.url, "/api/register", {
+    username: "carol",
+    password: PASSWORD,
+  });
+  const res = await postJson(
+    rt.url,
+    "/api/login",
+    { username: "carol", password: "definitely-not-it" },
+    alice.cookie,
+  );
+  await wait(200);
+
+  expect(res.status).toBe(401);
+  expect(socket.connected).toBe(true);
+});
+
+test("logging in again as the same user ends the old connection, and the new cookie plays", async () => {
+  await postJson(rt.url, "/api/register", {
+    username: "carol",
+    password: PASSWORD,
+  });
+  const first = cookieOf(
+    await postJson(rt.url, "/api/login", {
+      username: "carol",
+      password: PASSWORD,
+    }),
+  );
+  const created = await postJson(
+    rt.url,
+    "/api/characters",
+    { name: "Cara" },
+    first,
+  );
+  const characterId = (await created.json()).id;
+  const { socket } = await rt.open({ cookie: first, auth: { characterId } });
+  const closed = new Promise((resolve) => socket.once("disconnect", resolve));
+
+  const second = cookieOf(
+    await postJson(
+      rt.url,
+      "/api/login",
+      { username: "carol", password: PASSWORD },
+      first,
+    ),
+  );
+
+  expect(await closed).toBe("io server disconnect");
+  const again = await rt.open({ cookie: second, auth: { characterId } });
+  expect(again.welcome).toBeDefined();
+});

@@ -18,7 +18,7 @@ that this page lists every event and states the same limits as the code.
 - **One connection per character.** A newer connection replaces the older one,
   which is told with `replaced` and closed. The player keeps their place in
   the world.
-- **Logging out** closes every connection that belongs to that session.
+- **Logging out**, or logging in again in the same browser, closes every connection that belonged to the old session.
 - One server owns each world. See `docs/decisions/0003-scaling-the-game-server.md`.
 
 ## Refusals

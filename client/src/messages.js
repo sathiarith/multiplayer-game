@@ -58,7 +58,7 @@ export function describeConnection(state) {
     case "ended":
       return {
         tone: "secondary",
-        text: "You were disconnected from the game. This happens when you log out.",
+        text: "You were disconnected from the game. This happens when you log out, or log in again in another tab.",
         retryLabel: "Reconnect",
       };
     case "kicked":
