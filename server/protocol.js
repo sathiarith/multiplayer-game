@@ -1,4 +1,5 @@
 import { TICK_RATE } from "../shared/prediction.js";
+import { PICKUP_RANGE } from "../shared/items.js";
 
 // The rules of the game connection, in one place. `docs/protocol.md` describes
 // them, and server/protocol.test.js fails if the two disagree.
@@ -11,8 +12,10 @@ export const PROTOCOL = {
   saveEveryMs: 30_000, // positions and health are written this often, and when a player leaves
   chat: { maxLength: 200, perSecond: 0.5, burst: 5, radius: 320 }, // radius in pixels (8 tiles)
   chatRejections: ["invalid", "too_fast"],
+  pickup: { range: PICKUP_RANGE, respawnSeconds: 30, maxStack: 9999 },
+  pickupRejections: ["gone", "too_far", "full", "error"],
   events: {
-    client: ["input", "chat"],
+    client: ["input", "chat", "pickup"],
     server: [
       "welcome",
       "snapshot",
@@ -20,6 +23,8 @@ export const PROTOCOL = {
       "kicked",
       "chat",
       "chat_rejected",
+      "inventory",
+      "pickup_rejected",
     ],
   },
   refusals: ["not_authenticated", "not_found", "internal_error"],
