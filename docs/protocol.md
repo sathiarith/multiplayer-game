@@ -136,3 +136,4 @@ designed around them.
 - It draws other players about 100 ms in the past, blended between two
   snapshots.
 - It does not reconnect by itself after `replaced`, `kicked`, or a refusal.
+- It sends chat as volatile, so a message typed while disconnected is dropped, not delivered late. It shows only messages the server echoed back.

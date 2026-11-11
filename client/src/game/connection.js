@@ -5,13 +5,20 @@ import { io as defaultIo } from "socket.io-client";
 //   { status: "connected", character }
 //   { status: "refused", code }
 // The returned object is also how the game talks to the server:
-//   sendInput(input), onSnapshot(listener) -> unsubscribe, close()
+//   sendInput(input)
+//   onSnapshot(listener) -> unsubscribe
+//   sendChat(text)
+//   onChat(listener) -> unsubscribe
+//   onChatRejected(listener) -> unsubscribe
+//   close()
 export function connectToGame({ characterId, onChange, io = defaultIo }) {
   // No URL: connect to the page's own origin (the Vite proxy in development).
   const socket = io({ transports: ["websocket"], auth: { characterId } });
   let closed = false;
   let settled = false; // the outcome is final, so ignore anything that follows
   const snapshotListeners = new Set();
+  const chatListeners = new Set();
+  const rejectionListeners = new Set();
 
   const report = (state) => {
     if (!closed && !settled) onChange(state);
@@ -42,11 +49,35 @@ export function connectToGame({ characterId, onChange, io = defaultIo }) {
     for (const listener of snapshotListeners) listener(snapshot);
   });
 
+  socket.on("chat", (message) => {
+    if (closed) return;
+    for (const listener of chatListeners) listener(message);
+  });
+  socket.on("chat_rejected", (rejection) => {
+    if (closed) return;
+    for (const listener of rejectionListeners) listener(rejection);
+  });
+
   return {
     // Sent "volatile": if the connection is not ready the message is dropped,
     // not queued. A key press from two seconds ago must never arrive late.
     sendInput(input) {
       if (!closed) socket.volatile.emit("input", input);
+    },
+    // Volatile, like input: a message typed while the connection is down is
+    // dropped rather than delivered late. Only the server's echo is shown.
+    sendChat(text) {
+      if (!closed) socket.volatile.emit("chat", { text });
+    },
+
+    onChat(listener) {
+      chatListeners.add(listener);
+      return () => chatListeners.delete(listener);
+    },
+
+    onChatRejected(listener) {
+      rejectionListeners.add(listener);
+      return () => rejectionListeners.delete(listener);
     },
 
     onSnapshot(listener) {
@@ -57,6 +88,8 @@ export function connectToGame({ characterId, onChange, io = defaultIo }) {
     close() {
       closed = true;
       snapshotListeners.clear();
+      chatListeners.clear();
+      rejectionListeners.clear();
       socket.removeAllListeners();
       socket.close(); // also stops any reconnection attempts
     },

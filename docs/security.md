@@ -118,12 +118,11 @@ Handled:
 - Tests store SQL fragments as ordinary usernames and character names.
 - The server renders no HTML. The client shows text through React, which
   escapes it, and nothing uses `innerHTML` or `dangerouslySetInnerHTML`.
+- The chat box shows messages through React, as text and never as markup. A component test and an end-to-end test check that `<img>` and `<b>` in a message stay text.
 
 Evidence: `users.test.js`, `characters.test.js`, `validation.test.js`.
 
 Deferred:
-
-- The chat box (Story 7.1, Part 2) must show text as text, never through `innerHTML` or `dangerouslySetInnerHTML`.
 
 ## A06 Insecure Design
 
@@ -248,7 +247,6 @@ Deferred:
 
 | Item                                                  | Planned     |
 | ----------------------------------------------------- | ----------- |
-| Escape chat messages in the client                    | Sprint 7    |
 | TLS, `trust proxy`, `Secure` cookies                  | Sprint 9    |
 | Dependency scanning in CI                             | Sprint 9    |
 | Alerting, log retention, backups                      | Sprint 9    |

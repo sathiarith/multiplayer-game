@@ -293,3 +293,16 @@ test("latestPlayers gives the newest snapshot's players", () => {
   connection.push(snap(2, [mine(110)]));
   expect(game.latestPlayers().map((p) => p.name)).toEqual(["Aria"]);
 });
+
+test("keys typed into a text box do not move the character", () => {
+  const { browser, connection, game } = setup();
+  game.start();
+  connection.push(snap(1, [mine()]));
+
+  const arrow = browser.typeIn("ArrowLeft");
+  browser.typeIn("KeyD");
+  browser.frame(50);
+
+  expect(connection.sendInput).not.toHaveBeenCalled();
+  expect(arrow.defaultPrevented).toBe(false); // the text box keeps its arrow keys
+});
