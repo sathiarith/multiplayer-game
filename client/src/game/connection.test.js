@@ -141,3 +141,42 @@ test("being kicked is final, and the disconnect that follows does not hide it", 
 
   expect(last()).toEqual({ status: "kicked" });
 });
+
+const chatMessage = (text) => ({
+  id: text,
+  from: { id: 7, name: "Aria" },
+  text,
+  at: "2026-11-08T12:00:00.000Z",
+});
+
+test("chat is sent volatile, and chat events reach listeners until they unsubscribe", () => {
+  const { connection, socket } = start();
+  connection.sendChat("hello");
+  expect(socket.volatile.emit).toHaveBeenCalledWith("chat", { text: "hello" });
+
+  const heard = [];
+  const rejected = [];
+  const off = connection.onChat((m) => heard.push(m.text));
+  connection.onChatRejected((r) => rejected.push(r.reason));
+
+  socket.emit("chat", chatMessage("hi"));
+  socket.emit("chat_rejected", { reason: "too_fast" });
+  off();
+  socket.emit("chat", chatMessage("again"));
+
+  expect(heard).toEqual(["hi"]);
+  expect(rejected).toEqual(["too_fast"]);
+});
+
+test("after close no chat is sent and nothing is heard", () => {
+  const { connection, socket } = start();
+  const heard = [];
+  connection.onChat((m) => heard.push(m));
+  connection.close();
+
+  connection.sendChat("hello");
+  socket.emit("chat", chatMessage("late"));
+
+  expect(socket.volatile.emit).not.toHaveBeenCalled();
+  expect(heard).toEqual([]);
+});

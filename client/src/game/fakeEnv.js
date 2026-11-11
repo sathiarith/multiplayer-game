@@ -7,8 +7,10 @@ export function fakeEnv() {
   let nextId = 1;
   let time = 0;
 
-  const key = (type, code) => {
+  // `from` stands in for the element that had focus, such as a text box.
+  const key = (type, code, from) => {
     const e = Object.assign(new Event(type, { cancelable: true }), { code });
+    if (from) Object.defineProperty(e, "target", { value: from });
     target.dispatchEvent(e);
     return e;
   };
@@ -34,6 +36,7 @@ export function fakeEnv() {
     },
     press: (code) => key("keydown", code),
     release: (code) => key("keyup", code),
+    typeIn: (code) => key("keydown", code, { tagName: "INPUT" }),
     blur: () => target.dispatchEvent(new Event("blur")),
   };
 }

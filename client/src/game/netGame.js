@@ -14,6 +14,10 @@ import { browserEnv } from "./env.js";
 const IDLE = { up: false, down: false, left: false, right: false };
 const ORIGIN = { x: 0, y: 0 };
 const MAX_STEPS_PER_FRAME = 5;
+// Keys typed into a text box (the chat) belong to the text box, not the game.
+const isTyping = (target) =>
+  target?.isContentEditable ||
+  ["INPUT", "TEXTAREA", "SELECT"].includes(target?.tagName);
 
 // My own character is predicted in fixed steps (the same ones the server takes)
 // and corrected by the server. Everyone else is drawn slightly in the past,
@@ -48,6 +52,7 @@ export function createNetworkGame({
 
   // Input: only record what is held. Nothing moves here.
   const onKeyDown = (e) => {
+    if (isTyping(e.target)) return;
     keys.add(e.code);
     if (e.code.startsWith("Arrow")) e.preventDefault(); // stop the page scrolling
   };

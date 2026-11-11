@@ -5,6 +5,7 @@ import { useSelectedCharacter } from "../selection.jsx";
 import { useGameConnection } from "../useGameConnection.js";
 import ConnectionStatus from "../components/ConnectionStatus.jsx";
 import GameCanvas from "../components/GameCanvas.jsx";
+import ChatPanel from "../components/ChatPanel.jsx";
 
 export default function Play() {
   const { selected } = useSelectedCharacter();
@@ -22,6 +23,8 @@ export default function Play() {
   // Nothing chosen (for example after a page reload): go pick a character.
   if (!selected) return <Navigate to="/characters" replace />;
 
+  const live = game.status === "connected" ? game.connection : null;
+
   return (
     <>
       <div className="d-flex justify-content-between align-items-center mb-3">
@@ -29,10 +32,12 @@ export default function Play() {
         <Link to="/characters">Back to characters</Link>
       </div>
       <ConnectionStatus state={game} onReconnect={game.reconnect} />
-      <GameCanvas
-        character={selected}
-        connection={game.status === "connected" ? game.connection : null}
-      />
+      <GameCanvas character={selected} connection={live} />
+      <ChatPanel connection={live} you={selected.id} />
+      <p className="text-body-secondary mt-2 mb-0">
+        Move with the arrow keys or WASD. Press Enter to chat, and Escape to go
+        back to the game.
+      </p>
       <p className="text-body-secondary mt-2 mb-0">
         Move with the arrow keys or WASD.
       </p>
