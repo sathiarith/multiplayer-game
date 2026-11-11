@@ -27,10 +27,21 @@ export function parseInput(raw) {
 
 const round2 = (n) => Math.round(n * 100) / 100;
 
-export function createWorld(level) {
+export function createWorld(
+  level,
+  { spawns = [], respawnTicks = 30 * TICK_RATE } = {},
+) {
   const players = new Map(); // character id -> { id, state, input, ack, inputTick, score, walked }
   let tick = 0;
-
+  // Items lying on the map. A taken item comes back after `respawnTicks`.
+  const ground = spawns.map((spawn, i) => ({
+    id: i + 1,
+    item: spawn.item,
+    x: (spawn.col + 0.5) * level.tileSize,
+    y: (spawn.row + 0.5) * level.tileSize,
+    takenAt: null, // the tick it was picked up, or null while it lies there
+  }));
+  const available = () => ground.filter((spot) => spot.takenAt === null);
   return {
     // Adds a player, or re-attaches one already in the world: the position and
     // score are kept, but the input sequence starts again.
@@ -56,6 +67,25 @@ export function createWorld(level) {
     has: (id) => players.has(id),
 
     ids: () => [...players.keys()],
+
+    // May this character pick up this item now? { ok: true, item } or { ok: false, reason }.
+    checkPickup(characterId, groundId, range) {
+      const player = players.get(characterId);
+      const spot = ground.find((s) => s.id === groundId);
+      if (!player || !spot || spot.takenAt !== null)
+        return { ok: false, reason: "gone" };
+      const distance = Math.hypot(
+        player.state.x - spot.x,
+        player.state.y - spot.y,
+      );
+      if (distance > range) return { ok: false, reason: "too_far" };
+      return { ok: true, item: spot.item };
+    },
+
+    take(groundId) {
+      const spot = ground.find((s) => s.id === groundId);
+      if (spot) spot.takenAt = tick;
+    },
 
     // The parts of a player that are saved. Exact, unlike the rounded snapshot.
     get(id) {
@@ -94,6 +124,10 @@ export function createWorld(level) {
     // One fixed step of the simulation for every player.
     step() {
       tick += 1;
+      for (const spot of ground) {
+        if (spot.takenAt !== null && tick - spot.takenAt >= respawnTicks)
+          spot.takenAt = null;
+      }
       for (const player of players.values()) {
         const stale = tick - player.inputTick > STALE_AFTER_TICKS;
         const held = stale ? NO_INPUT : player.input;
@@ -127,6 +161,7 @@ export function createWorld(level) {
           maxHp: p.state.maxHp,
           ack: p.ack,
         })),
+        items: available().map(({ id, item, x, y }) => ({ id, item, x, y })),
       };
     },
   };
