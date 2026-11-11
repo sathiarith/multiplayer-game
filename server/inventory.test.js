@@ -2,7 +2,13 @@ import { test, expect, beforeEach, afterEach } from "vitest";
 import { openDb } from "./db.js";
 import { createUser } from "./users.js";
 import { createCharacter } from "./characters.js";
-import { addItem, listInventory, MAX_STACK } from "./inventory.js";
+import {
+  addItem,
+  listInventory,
+  MAX_STACK,
+  removeItem,
+  listItems,
+} from "./inventory.js";
 
 let db;
 let aria;
@@ -116,4 +122,37 @@ test("deleting a character deletes what it carried", () => {
   addItem(db, aria.id, "meat");
   db.prepare("DELETE FROM characters WHERE id = ?").run(aria.id);
   expect(db.prepare("SELECT COUNT(*) AS n FROM inventory").get().n).toBe(0);
+});
+
+test("taking part of a stack leaves the rest", () => {
+  addItem(db, aria.id, "wood", 5);
+  expect(removeItem(db, aria.id, "wood", 2)).toEqual({ ok: true, quantity: 3 });
+  expect(listInventory(db, aria.id)[0].quantity).toBe(3);
+});
+
+test("taking a whole stack removes the row", () => {
+  addItem(db, aria.id, "wood", 2);
+  expect(removeItem(db, aria.id, "wood", 2)).toEqual({ ok: true, quantity: 0 });
+  expect(listInventory(db, aria.id)).toEqual([]);
+});
+
+test("taking more than there is changes nothing", () => {
+  addItem(db, aria.id, "wood", 2);
+  expect(removeItem(db, aria.id, "wood", 3)).toEqual({
+    ok: false,
+    reason: "missing_items",
+  });
+  expect(removeItem(db, aria.id, "meat", 1)).toEqual({
+    ok: false,
+    reason: "missing_items",
+  });
+  expect(listInventory(db, aria.id)[0].quantity).toBe(2);
+});
+
+test("the catalog lists every item by name", () => {
+  expect(listItems(db)).toEqual([
+    { code: "gold_coin", name: "Gold coin" },
+    { code: "meat", name: "Meat" },
+    { code: "wood", name: "Wood" },
+  ]);
 });
