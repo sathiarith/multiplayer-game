@@ -2,6 +2,7 @@ import { test, expect } from "vitest";
 import fs from "node:fs";
 import { PROTOCOL } from "./protocol.js";
 import { STALE_AFTER_TICKS } from "./world.js";
+import { CHAT_MAX_LENGTH } from "./chat.js";
 
 const doc = fs.readFileSync(
   new URL("../docs/protocol.md", import.meta.url),
@@ -51,4 +52,20 @@ test("the limits in the document match the code", () => {
   expect(row("Progress saved")).toContain(
     `every ${PROTOCOL.saveEveryMs / 1000} seconds`,
   );
+  expect(row("Chat message length")).toContain(
+    `${PROTOCOL.chat.maxLength} characters`,
+  );
+  expect(row("Chat messages per person")).toContain(
+    `${PROTOCOL.chat.burst} per ${PROTOCOL.chat.burst / PROTOCOL.chat.perSecond} seconds`,
+  );
+  expect(row("Chat range")).toContain(`${PROTOCOL.chat.radius} pixels`);
+});
+
+test("every chat rejection reason is documented", () => {
+  for (const reason of PROTOCOL.chatRejections)
+    expect(doc, reason).toContain(`\`${reason}\``);
+});
+
+test("the chat length in the protocol is the one the code enforces", () => {
+  expect(PROTOCOL.chat.maxLength).toBe(CHAT_MAX_LENGTH);
 });

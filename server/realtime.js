@@ -8,6 +8,8 @@ import { createWorld, parseInput, TICK_RATE } from "./world.js";
 import { createGuard } from "./abuse.js";
 import { createPersistence } from "./persistence.js";
 import { PROTOCOL } from "./protocol.js";
+import crypto from "node:crypto";
+import { parseChat, createBucket, withinRadius } from "./chat.js";
 
 // Socket.IO shows a refusal to the client as `connect_error`, carrying err.data.
 const refuse = (code, message) =>
@@ -145,6 +147,44 @@ export function attachRealtime(
       return true;
     }
 
+    // People type, machines flood: chat has its own, slower limit.
+    const chatBucket = createBucket({
+      ratePerSecond: PROTOCOL.chat.perSecond,
+      burst: PROTOCOL.chat.burst,
+    });
+
+    // Returns false only for nonsense (a violation). A person's mistake is
+    // answered with chat_rejected and is not held against them.
+    function handleChat(raw) {
+      const parsed = parseChat(raw);
+      if (!parsed.ok && parsed.reason === "malformed") return false;
+      if (!parsed.ok) {
+        socket.emit("chat_rejected", { reason: "invalid" });
+        return true;
+      }
+      if (!chatBucket.take()) {
+        socket.emit("chat_rejected", { reason: "too_fast" });
+        return true;
+      }
+      const speaker = world.get(character.id);
+      if (!speaker) return true;
+
+      const message = {
+        id: crypto.randomUUID(),
+        from: { id: character.id, name: character.name },
+        text: parsed.text,
+        at: new Date().toISOString(),
+      };
+      const positions = world.ids().map((id) => ({ id, ...world.get(id) }));
+      for (const id of withinRadius(positions, speaker, PROTOCOL.chat.radius)) {
+        online.get(id)?.emit("chat", message);
+      }
+      return true;
+    }
+
+    // Every event a client may send, and what handles it.
+    const handlers = { input: handleInput, chat: handleChat };
+
     function kick() {
       kicked = true;
       log.warn(
@@ -159,7 +199,8 @@ export function attachRealtime(
       if (kicked) return;
       let verdict = limiter.hit(); // every message costs a token
       if (verdict === "ok") {
-        const valid = event === "input" && handleInput(args[0]);
+        const handler = handlers[event];
+        const valid = handler ? handler(args[0]) : false; // unknown events are violations
         if (!valid) verdict = limiter.strike(); // an unknown event or a malformed payload
       }
       if (verdict === "kick") kick();

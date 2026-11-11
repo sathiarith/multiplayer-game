@@ -9,9 +9,18 @@ export const PROTOCOL = {
   violations: { max: 20, windowMs: 10_000 }, // this many in this long means a kick
   kickReason: "too_many_messages",
   saveEveryMs: 30_000, // positions and health are written this often, and when a player leaves
+  chat: { maxLength: 200, perSecond: 0.5, burst: 5, radius: 320 }, // radius in pixels (8 tiles)
+  chatRejections: ["invalid", "too_fast"],
   events: {
-    client: ["input"],
-    server: ["welcome", "snapshot", "replaced", "kicked"],
+    client: ["input", "chat"],
+    server: [
+      "welcome",
+      "snapshot",
+      "replaced",
+      "kicked",
+      "chat",
+      "chat_rejected",
+    ],
   },
   refusals: ["not_authenticated", "not_found", "internal_error"],
 };

@@ -518,6 +518,7 @@ test("a failed save is logged, and the game carries on", async () => {
     const { socket } = await srv.open(asPlayer(alice));
 
     srv.db.exec("DROP TABLE characters"); // saving fails from now on
+    socket.emit("input", hold(1, { right: true })); // a change, so the next save really tries to write
 
     await vi.waitFor(() =>
       expect(lines.some((l) => l.msg === "could not save character")).toBe(
@@ -652,4 +653,124 @@ test("logging in again as the same user ends the old connection, and the new coo
   expect(await closed).toBe("io server disconnect");
   const again = await rt.open({ cookie: second, auth: { characterId } });
   expect(again.welcome).toBeDefined();
+});
+
+// Everything a socket hears on `event`, collected as it arrives.
+function hear(socket, event) {
+  const heard = [];
+  socket.on(event, (payload) => heard.push(payload));
+  return heard;
+}
+const said = (heard) => heard.map((m) => m.text);
+
+test("a chat message reaches nearby players and the speaker, trimmed and stamped", async () => {
+  const alice = await rt.player("alice", "Aria");
+  const bob = await rt.player("bobby", "Borin");
+  const a = await rt.open(asPlayer(alice));
+  const b = await rt.open(asPlayer(bob));
+  const heardByA = hear(a.socket, "chat");
+  const heardByB = hear(b.socket, "chat");
+
+  a.socket.emit("chat", { text: "  hello there  " });
+
+  await vi.waitFor(() => expect(heardByB).toHaveLength(1));
+  await vi.waitFor(() => expect(heardByA).toHaveLength(1));
+  const message = heardByB[0];
+  expect(message).toMatchObject({
+    from: { id: alice.characterId, name: "Aria" },
+    text: "hello there",
+  });
+  expect(message.id).toEqual(expect.any(String));
+  expect(Date.parse(message.at)).not.toBeNaN();
+  expect(heardByA[0].id).toBe(message.id); // the speaker hears the same message
+});
+
+test("players out of range do not hear the message", async () => {
+  const alice = await rt.player("alice", "Aria");
+  const bob = await rt.player("bobby", "Borin");
+  const a = await rt.open(asPlayer(alice));
+  const b = await rt.open(asPlayer(bob));
+
+  // Bob walks more than 8 tiles to the right.
+  for (let seq = 1; seq <= 4; seq++) {
+    b.socket.emit("input", hold(seq, { right: true }));
+    await wait(150);
+  }
+  await snapshotWhere(b.socket, (s) => me(s, bob.characterId).x > 100 + 320);
+  const heardByB = hear(b.socket, "chat");
+  const heardByA = hear(a.socket, "chat");
+
+  a.socket.emit("chat", { text: "anyone here?" });
+
+  await vi.waitFor(() => expect(heardByA).toHaveLength(1));
+  await wait(100);
+  expect(heardByB).toEqual([]);
+});
+
+test("the server passes text through unchanged: escaping it is the client's job", async () => {
+  const alice = await rt.player("alice", "Aria");
+  const a = await rt.open(asPlayer(alice));
+  const heard = hear(a.socket, "chat");
+
+  a.socket.emit("chat", { text: "<img src=x onerror=alert(1)>" });
+
+  await vi.waitFor(() =>
+    expect(said(heard)).toEqual(["<img src=x onerror=alert(1)>"]),
+  );
+});
+
+test("an invalid message is refused to the sender only, and is not a violation", async () => {
+  await withServer({ guard: { burst: 100, maxViolations: 3 } }, async (srv) => {
+    const alice = await srv.player("alice", "Aria");
+    const bob = await srv.player("bobby", "Borin");
+    const a = await srv.open(asPlayer(alice));
+    const b = await srv.open(asPlayer(bob));
+    const rejected = hear(a.socket, "chat_rejected");
+    const heardByB = hear(b.socket, "chat");
+
+    for (const text of [
+      "   ",
+      "x".repeat(201),
+      "two\nlines",
+      "evil\u202Eecaf",
+    ]) {
+      a.socket.emit("chat", { text });
+    }
+
+    await vi.waitFor(() => expect(rejected).toHaveLength(4));
+    expect(rejected.every((r) => r.reason === "invalid")).toBe(true);
+    expect(heardByB).toEqual([]);
+    expect(a.socket.connected).toBe(true); // four mistakes, and not kicked
+  });
+});
+
+test("more than five messages in a burst are refused as too fast", async () => {
+  const alice = await rt.player("alice", "Aria");
+  const a = await rt.open(asPlayer(alice));
+  const heard = hear(a.socket, "chat");
+  const rejected = hear(a.socket, "chat_rejected");
+
+  for (let i = 1; i <= 7; i++) a.socket.emit("chat", { text: `message ${i}` });
+
+  await vi.waitFor(() => expect(rejected).toHaveLength(2));
+  expect(said(heard)).toEqual([
+    "message 1",
+    "message 2",
+    "message 3",
+    "message 4",
+    "message 5",
+  ]);
+  expect(rejected.map((r) => r.reason)).toEqual(["too_fast", "too_fast"]);
+});
+
+test("a malformed chat event is a violation", async () => {
+  await withServer({ guard: { burst: 100, maxViolations: 3 } }, async (srv) => {
+    const alice = await srv.player("alice", "Aria");
+    const { socket } = await srv.open(asPlayer(alice));
+    const { kicked } = watch(socket);
+
+    for (let i = 0; i < 5; i++) socket.emit("chat", "hello");
+
+    expect((await kicked).reason).toBe("too_many_messages");
+  });
 });
