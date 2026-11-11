@@ -36,3 +36,37 @@ export function addItem(db, characterId, code, amount = 1) {
     return { ok: true, quantity };
   })();
 }
+
+// Takes `amount` of an item away, in one transaction. The row disappears at zero.
+// { ok: true, quantity } or { ok: false, reason: "missing_items" }. Throws for an unknown item.
+export function removeItem(db, characterId, code, amount = 1) {
+  return db.transaction(() => {
+    const item = db.prepare("SELECT id FROM items WHERE code = ?").get(code);
+    if (!item) throw new Error(`Unknown item: ${code}`);
+
+    const row = db
+      .prepare(
+        "SELECT quantity FROM inventory WHERE character_id = ? AND item_id = ?",
+      )
+      .get(characterId, item.id);
+    if (!row || row.quantity < amount)
+      return { ok: false, reason: "missing_items" };
+
+    const quantity = row.quantity - amount;
+    if (quantity === 0) {
+      db.prepare(
+        "DELETE FROM inventory WHERE character_id = ? AND item_id = ?",
+      ).run(characterId, item.id);
+    } else {
+      db.prepare(
+        "UPDATE inventory SET quantity = ? WHERE character_id = ? AND item_id = ?",
+      ).run(quantity, characterId, item.id);
+    }
+    return { ok: true, quantity };
+  })();
+}
+
+// Every item that exists, for the trade window: [{ code, name }].
+export function listItems(db) {
+  return db.prepare("SELECT code, name FROM items ORDER BY name").all();
+}

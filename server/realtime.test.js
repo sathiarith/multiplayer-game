@@ -1,6 +1,7 @@
 import { test, expect, beforeEach, afterEach, vi } from "vitest";
 import { startRealtime } from "./realtime-test-helpers.js";
 import { TEST_ORIGIN, createLogCapture } from "./test-helpers.js";
+import { addItem } from "./inventory.js";
 
 let rt;
 beforeEach(async () => {
@@ -878,4 +879,261 @@ test("if the inventory cannot be saved, the item stays on the ground", async () 
     const snap = await snapshotWhere(socket, () => true);
     expect(snap.items.some((i) => i.id === gold.id)).toBe(true);
   });
+});
+
+// Everything a socket hears about trading.
+const tradeEvents = (socket) => ({
+  offered: hear(socket, "trade_offered"),
+  sent: hear(socket, "trade_sent"),
+  results: hear(socket, "trade_result"),
+  inventory: hear(socket, "inventory"),
+});
+const goldOf = (srv, characterId) =>
+  srv.db
+    .prepare(
+      `SELECT COALESCE(SUM(inventory.quantity), 0) AS n
+         FROM inventory JOIN items ON items.id = inventory.item_id
+        WHERE items.code = 'gold_coin' AND inventory.character_id = ?`,
+    )
+    .get(characterId).n;
+const carried = (events) =>
+  Object.fromEntries(
+    events.inventory.at(-1).items.map((i) => [i.code, i.quantity]),
+  );
+
+test("the welcome carries the catalog of every item", async () => {
+  const alice = await rt.player("alice", "Aria");
+  const { welcome } = await rt.open(asPlayer(alice));
+  expect(welcome.catalog).toEqual(
+    expect.arrayContaining([{ code: "gold_coin", name: "Gold coin" }]),
+  );
+});
+
+test("an offer reaches the other player, and accepting it moves items both ways", async () => {
+  const alice = await rt.player("alice", "Aria");
+  const bob = await rt.player("bobby", "Borin");
+  addItem(rt.db, alice.characterId, "gold_coin", 3);
+  addItem(rt.db, bob.characterId, "wood", 2);
+  const a = await rt.open(asPlayer(alice));
+  const b = await rt.open(asPlayer(bob));
+  const ea = tradeEvents(a.socket);
+  const eb = tradeEvents(b.socket);
+
+  a.socket.emit("trade_offer", {
+    to: bob.characterId,
+    give: [{ code: "gold_coin", quantity: 2 }],
+    want: [{ code: "wood", quantity: 1 }],
+  });
+
+  await vi.waitFor(() => expect(eb.offered).toHaveLength(1));
+  const offer = eb.offered[0];
+  expect(offer).toMatchObject({
+    from: { id: alice.characterId, name: "Aria" },
+    give: [{ code: "gold_coin", name: "Gold coin", quantity: 2 }],
+    want: [{ code: "wood", name: "Wood", quantity: 1 }],
+  });
+  await vi.waitFor(() => expect(ea.sent.map((s) => s.id)).toEqual([offer.id]));
+
+  b.socket.emit("trade_accept", { id: offer.id });
+
+  await vi.waitFor(() =>
+    expect(ea.results).toEqual([{ id: offer.id, ok: true }]),
+  );
+  await vi.waitFor(() =>
+    expect(eb.results).toEqual([{ id: offer.id, ok: true }]),
+  );
+  await vi.waitFor(() => expect(ea.inventory).toHaveLength(1));
+  await vi.waitFor(() => expect(eb.inventory).toHaveLength(1));
+  expect(carried(ea)).toEqual({ gold_coin: 1, wood: 1 });
+  expect(carried(eb)).toEqual({ gold_coin: 2, wood: 1 });
+});
+
+test("the same coins offered to two players and accepted at once are traded only once", async () => {
+  const alice = await rt.player("alice", "Aria");
+  const bob = await rt.player("bobby", "Borin");
+  const carol = await rt.player("carol", "Cara");
+  addItem(rt.db, alice.characterId, "gold_coin", 3);
+  const a = await rt.open(asPlayer(alice));
+  const b = await rt.open(asPlayer(bob));
+  const c = await rt.open(asPlayer(carol));
+  const ea = tradeEvents(a.socket);
+  const eb = tradeEvents(b.socket);
+  const ec = tradeEvents(c.socket);
+  const allMyGold = [{ code: "gold_coin", quantity: 3 }];
+
+  a.socket.emit("trade_offer", {
+    to: bob.characterId,
+    give: allMyGold,
+    want: [],
+  });
+  a.socket.emit("trade_offer", {
+    to: carol.characterId,
+    give: allMyGold,
+    want: [],
+  });
+  await vi.waitFor(() => expect(eb.offered.length + ec.offered.length).toBe(2));
+
+  b.socket.emit("trade_accept", { id: eb.offered[0].id });
+  c.socket.emit("trade_accept", { id: ec.offered[0].id });
+
+  await vi.waitFor(() => expect(ea.results).toHaveLength(2));
+  expect(ea.results.map((r) => (r.ok ? "ok" : r.reason)).sort()).toEqual([
+    "missing_items",
+    "ok",
+  ]);
+  const total =
+    goldOf(rt, alice.characterId) +
+    goldOf(rt, bob.characterId) +
+    goldOf(rt, carol.characterId);
+  expect(total).toBe(3); // no coin was created
+});
+
+test("only the receiver may accept or decline, only the sender may cancel, and an answer is final", async () => {
+  const alice = await rt.player("alice", "Aria");
+  const bob = await rt.player("bobby", "Borin");
+  const carol = await rt.player("carol", "Cara");
+  addItem(rt.db, alice.characterId, "gold_coin", 3);
+  const a = await rt.open(asPlayer(alice));
+  const b = await rt.open(asPlayer(bob));
+  const c = await rt.open(asPlayer(carol));
+  const ea = tradeEvents(a.socket);
+  const eb = tradeEvents(b.socket);
+  const ec = tradeEvents(c.socket);
+  const coin = [{ code: "gold_coin", quantity: 1 }];
+
+  a.socket.emit("trade_offer", { to: bob.characterId, give: coin, want: [] });
+  await vi.waitFor(() => expect(eb.offered).toHaveLength(1));
+  const id = eb.offered[0].id;
+
+  c.socket.emit("trade_accept", { id }); // not addressed to Carol
+  a.socket.emit("trade_accept", { id }); // a sender cannot accept their own offer
+  b.socket.emit("trade_cancel", { id }); // only the sender can cancel
+  await vi.waitFor(() =>
+    expect(ec.results).toEqual([{ id, ok: false, reason: "gone" }]),
+  );
+  await vi.waitFor(() =>
+    expect(ea.results).toEqual([{ id, ok: false, reason: "gone" }]),
+  );
+  await vi.waitFor(() =>
+    expect(eb.results).toEqual([{ id, ok: false, reason: "gone" }]),
+  );
+
+  b.socket.emit("trade_decline", { id });
+  await vi.waitFor(() =>
+    expect(ea.results.at(-1)).toEqual({ id, ok: false, reason: "declined" }),
+  );
+  b.socket.emit("trade_accept", { id }); // too late
+  await vi.waitFor(() =>
+    expect(eb.results.at(-1)).toEqual({ id, ok: false, reason: "gone" }),
+  );
+
+  a.socket.emit("trade_offer", { to: bob.characterId, give: coin, want: [] });
+  await vi.waitFor(() => expect(eb.offered).toHaveLength(2));
+  const second = eb.offered[1].id;
+  a.socket.emit("trade_cancel", { id: second });
+  await vi.waitFor(() =>
+    expect(eb.results.at(-1)).toEqual({
+      id: second,
+      ok: false,
+      reason: "cancelled",
+    }),
+  );
+
+  expect(goldOf(rt, alice.characterId)).toBe(3); // nothing moved
+});
+
+test("offers that cannot work are refused to the sender, without penalty", async () => {
+  const alice = await rt.player("alice", "Aria");
+  const bob = await rt.player("bobby", "Borin");
+  const carol = await rt.player("carol", "Cara"); // registered, but not playing
+  addItem(rt.db, alice.characterId, "gold_coin", 1);
+  const a = await rt.open(asPlayer(alice));
+  await rt.open(asPlayer(bob));
+  const results = hear(a.socket, "trade_result");
+  const offer = (to, code, quantity) =>
+    a.socket.emit("trade_offer", { to, give: [{ code, quantity }], want: [] });
+
+  offer(alice.characterId, "gold_coin", 1); // to yourself
+  offer(bob.characterId, "dragon_egg", 1); // no such item
+  offer(carol.characterId, "gold_coin", 1); // not playing
+  offer(bob.characterId, "gold_coin", 5); // more than she has
+
+  await vi.waitFor(() =>
+    expect(results.map((r) => r.reason)).toEqual([
+      "invalid",
+      "invalid",
+      "not_here",
+      "missing_items",
+    ]),
+  );
+  expect(results.every((r) => r.id === null && r.ok === false)).toBe(true);
+
+  for (let i = 0; i < 4; i++) offer(bob.characterId, "gold_coin", 1);
+  await vi.waitFor(() =>
+    expect(results.at(-1)?.reason).toBe("too_many_offers"),
+  );
+  expect(a.socket.connected).toBe(true);
+});
+
+test("an offer to a player who is too far away is refused", async () => {
+  const alice = await rt.player("alice", "Aria");
+  const bob = await rt.player("bobby", "Borin");
+  addItem(rt.db, alice.characterId, "gold_coin", 1);
+  const a = await rt.open(asPlayer(alice));
+  const b = await rt.open(asPlayer(bob));
+  for (let seq = 1; seq <= 2; seq++) {
+    b.socket.emit("input", hold(seq, { right: true }));
+    await wait(150);
+  }
+  await snapshotWhere(
+    b.socket,
+    (s) => me(s, bob.characterId).x > 100 + 96 + 10,
+  );
+  const results = hear(a.socket, "trade_result");
+
+  a.socket.emit("trade_offer", {
+    to: bob.characterId,
+    give: [{ code: "gold_coin", quantity: 1 }],
+    want: [],
+  });
+
+  await vi.waitFor(() =>
+    expect(results.map((r) => r.reason)).toEqual(["too_far"]),
+  );
+});
+
+test("a malformed trade message is a violation", async () => {
+  await withServer({ guard: { burst: 100, maxViolations: 3 } }, async (srv) => {
+    const alice = await srv.player("alice", "Aria");
+    const { socket } = await srv.open(asPlayer(alice));
+    const { kicked } = watch(socket);
+
+    for (let i = 0; i < 5; i++)
+      socket.emit("trade_offer", { to: 2, give: "everything", want: [] });
+
+    expect((await kicked).reason).toBe("too_many_messages");
+  });
+});
+
+test("when the sender leaves, the receiver is told the offer is gone", async () => {
+  const alice = await rt.player("alice", "Aria");
+  const bob = await rt.player("bobby", "Borin");
+  addItem(rt.db, alice.characterId, "gold_coin", 1);
+  const a = await rt.open(asPlayer(alice));
+  const b = await rt.open(asPlayer(bob));
+  const eb = tradeEvents(b.socket);
+  a.socket.emit("trade_offer", {
+    to: bob.characterId,
+    give: [{ code: "gold_coin", quantity: 1 }],
+    want: [],
+  });
+  await vi.waitFor(() => expect(eb.offered).toHaveLength(1));
+
+  a.socket.disconnect();
+
+  await vi.waitFor(() =>
+    expect(eb.results).toEqual([
+      { id: eb.offered[0].id, ok: false, reason: "gone" },
+    ]),
+  );
 });
