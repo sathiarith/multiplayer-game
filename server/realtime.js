@@ -10,6 +10,8 @@ import { createPersistence } from "./persistence.js";
 import { PROTOCOL } from "./protocol.js";
 import crypto from "node:crypto";
 import { parseChat, createBucket, withinRadius } from "./chat.js";
+import { LOOT, parsePickup } from "./loot.js";
+import { addItem, listInventory } from "./inventory.js";
 
 // Socket.IO shows a refusal to the client as `connect_error`, carrying err.data.
 const refuse = (code, message) =>
@@ -26,6 +28,7 @@ export function attachRealtime(
     tickMs = 1000 / TICK_RATE,
     saveEveryMs = PROTOCOL.saveEveryMs,
     leaderboard, // optional: told about every score that is saved
+    loot = LOOT.spawns, // where items lie; tests may pass their own
     adapter, // optional: a Socket.IO adapter (the Redis one, for the experiment). Undefined means in memory.
     guard = {}, // tests pass smaller limits
   },
@@ -55,7 +58,10 @@ export function attachRealtime(
   // socket.request.session is the same session the REST API uses.
   io.engine.use(app.locals.sessionMiddleware);
 
-  const world = createWorld(level);
+  const world = createWorld(level, {
+    spawns: loot,
+    respawnTicks: PROTOCOL.pickup.respawnSeconds * TICK_RATE,
+  });
   const online = new Map(); // characterId -> the socket currently playing it
 
   // Writes positions and health to the database: on a timer for players who
@@ -127,10 +133,18 @@ export function attachRealtime(
       previous.disconnect(true);
     }
 
+    // The inventory travels with the welcome, so the page has it before it listens for changes.
+    let inventory = [];
+    try {
+      inventory = listInventory(db, character.id);
+    } catch (err) {
+      log.error({ err }, "could not read the inventory");
+    }
     socket.emit("welcome", {
       character,
       you: character.id,
       tickRate: TICK_RATE,
+      inventory,
     });
     log.info("player connected");
 
@@ -182,8 +196,42 @@ export function attachRealtime(
       return true;
     }
 
+    // Returns false only for nonsense (a violation).
+    function handlePickup(raw) {
+      const id = parsePickup(raw);
+      if (id === null) return false;
+
+      const check = world.checkPickup(character.id, id, PROTOCOL.pickup.range);
+      if (!check.ok) {
+        socket.emit("pickup_rejected", { reason: check.reason });
+        return true;
+      }
+
+      // The database first: if the write fails, the item stays on the ground.
+      let result;
+      try {
+        result = addItem(db, character.id, check.item, 1);
+      } catch (err) {
+        log.error({ err }, "pickup failed");
+        socket.emit("pickup_rejected", { reason: "error" });
+        return true;
+      }
+      if (!result.ok) {
+        socket.emit("pickup_rejected", { reason: result.reason });
+        return true;
+      }
+
+      world.take(id); // nothing else ran in between: Node handles one message at a time
+      socket.emit("inventory", { items: listInventory(db, character.id) });
+      return true;
+    }
+
     // Every event a client may send, and what handles it.
-    const handlers = { input: handleInput, chat: handleChat };
+    const handlers = {
+      input: handleInput,
+      chat: handleChat,
+      pickup: handlePickup,
+    };
 
     function kick() {
       kicked = true;

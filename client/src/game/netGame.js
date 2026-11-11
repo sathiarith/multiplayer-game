@@ -10,6 +10,7 @@ import {
   INTERPOLATION_DELAY_MS,
 } from "./interpolation.js";
 import { browserEnv } from "./env.js";
+import { PICKUP_RANGE } from "../../../shared/items.js";
 
 const IDLE = { up: false, down: false, left: false, right: false };
 const ORIGIN = { x: 0, y: 0 };
@@ -49,10 +50,29 @@ export function createNetworkGame({
   let lastSent = IDLE;
   let lastHud = null;
   let latest = []; // the newest snapshot's players, for debugging and the end-to-end tests
+  let groundItems = []; // items lying on the map, from the newest snapshot
+
+  // E picks up the nearest item within reach. The server checks again.
+  function pickUpNearest() {
+    const me = predictor.state();
+    if (!me) return;
+    let nearest = null;
+    for (const item of groundItems) {
+      const distance = Math.hypot(item.x - me.x, item.y - me.y);
+      if (
+        distance <= PICKUP_RANGE &&
+        (!nearest || distance < nearest.distance)
+      ) {
+        nearest = { id: item.id, distance };
+      }
+    }
+    if (nearest) connection.sendPickup(nearest.id);
+  }
 
   // Input: only record what is held. Nothing moves here.
   const onKeyDown = (e) => {
     if (isTyping(e.target)) return;
+    if (e.code === "KeyE" && !e.repeat) pickUpNearest(); // one request per press, not per repeat
     keys.add(e.code);
     if (e.code.startsWith("Arrow")) e.preventDefault(); // stop the page scrolling
   };
@@ -86,7 +106,8 @@ export function createNetworkGame({
     publishHud();
   }
 
-  function onSnapshot({ players }) {
+  function onSnapshot({ players, items = [] }) {
+    groundItems = items;
     latest = players;
     buffer.push(env.now(), players);
     const mine = players.find((p) => p.id === you);
@@ -164,12 +185,17 @@ export function createNetworkGame({
     }
     for (const id of anims.keys()) if (!present.has(id)) anims.delete(id);
 
-    renderWorld(ctx, level, entries, sheets, { youId: you, showHitbox });
+    renderWorld(ctx, level, entries, sheets, {
+      youId: you,
+      showHitbox,
+      groundItems,
+    });
     if (running) frameId = env.raf(frame);
   }
 
   return {
     latestPlayers: () => latest,
+    latestItems: () => groundItems,
     start() {
       if (running) return; // never run two loops
       running = true;

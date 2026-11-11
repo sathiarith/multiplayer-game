@@ -35,16 +35,19 @@ does not exist.
 
 ## Events
 
-| Event           | Direction        | Payload                                                   | Validated by                                                       |
-| --------------- | ---------------- | --------------------------------------------------------- | ------------------------------------------------------------------ |
-| `input`         | client to server | `{ seq, up, down, left, right }`                          | The server (`parseInput` in `server/world.js`)                     |
-| `welcome`       | server to client | `{ character, you, tickRate }`                            | The client trusts the server                                       |
-| `snapshot`      | server to client | `{ tick, players: [{ id, name, x, y, hp, maxHp, ack }] }` | The client trusts the server                                       |
-| `replaced`      | server to client | none                                                      | The client trusts the server                                       |
-| `kicked`        | server to client | `{ reason }`                                              | The client trusts the server                                       |
-| `chat`          | client to server | `{ text }`                                                | The server (`parseChat` in `server/chat.js`)                       |
-| `chat`          | server to client | `{ id, from: { id, name }, text, at }`                    | The client trusts the server, and escapes the text when showing it |
-| `chat_rejected` | server to client | `{ reason }`                                              | The client trusts the server                                       |
+| Event             | Direction        | Payload                                                 | Validated by                                                                                |
+| ----------------- | ---------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `input`           | client to server | `{ seq, up, down, left, right }`                        | The server (`parseInput` in `server/world.js`)                                              |
+| `welcome`         | server to client | `{ character, you, tickRate, inventory }`               | The client trusts the server                                                                |
+| `snapshot`        | server to client | `{ tick, players: [...], items: [{ id, item, x, y }] }` | The client trusts the server                                                                |
+| `replaced`        | server to client | none                                                    | The client trusts the server                                                                |
+| `kicked`          | server to client | `{ reason }`                                            | The client trusts the server                                                                |
+| `chat`            | client to server | `{ text }`                                              | The server (`parseChat` in `server/chat.js`)                                                |
+| `chat`            | server to client | `{ id, from: { id, name }, text, at }`                  | The client trusts the server, and escapes the text when showing it                          |
+| `chat_rejected`   | server to client | `{ reason }`                                            | The client trusts the server                                                                |
+| `pickup`          | client to server | `{ id }`                                                | The server (`parsePickup` in `server/loot.js`, range and availability in `server/world.js`) |
+| `inventory`       | server to client | `{ items: [{ code, name, description, quantity }] }`    | The client trusts the server                                                                |
+| `pickup_rejected` | server to client | `{ reason }`                                            | The client trusts the server                                                                |
 
 ### `input`
 
@@ -61,6 +64,7 @@ held, and once when the keys change. The client never sends a position.
 
 Sent once after the handshake. `character` is the saved character, `you` is
 its id, and `tickRate` is the server's steps per second.
+`inventory` is what the character carries, in the same shape as the `inventory` event’s `items`.
 
 ### `snapshot`
 
@@ -68,6 +72,7 @@ Sent to every player on every tick. A player who joins or leaves appears in or
 disappears from the list, so there are no separate events for that.
 `ack` is the last input `seq` the server applied for that player. The client
 uses it to replay the inputs the server has not seen yet.
+`items` lists the items lying on the map. A picked-up item is missing until it comes back.
 
 ### `replaced`
 
@@ -96,6 +101,25 @@ Only to the sender, when a message was not delivered. `reason` is `invalid`
 (empty, too long, or forbidden characters) or `too_fast` (over the chat rate).
 Neither counts as a violation.
 
+### `pickup`
+
+From a client: exactly `{ id }`, the id of an item in the latest snapshot.
+The server checks that the item is still there and that the character is
+within the pickup range, then adds it to the inventory in the database, and
+only then removes it from the map. Anything that is not exactly `{ id }` with
+a positive whole number is a violation.
+
+### `inventory`
+
+Only to the character who changed: everything it now carries. Sent after a
+successful pickup.
+
+### `pickup_rejected`
+
+Only to the sender. `reason` is `gone` (taken already, or no such item),
+`too_far` (out of range), `full` (the stack is at its limit) or `error` (the
+server could not save it). None of these is a violation.
+
 ## Limits
 
 | Limit                        | Value                                      |
@@ -110,6 +134,9 @@ Neither counts as a violation.
 | Chat message length          | 200 characters                             |
 | Chat messages per person     | 5 per 10 seconds                           |
 | Chat range                   | 320 pixels (8 tiles)                       |
+| Pickup range                 | 48 pixels                                  |
+| Item respawn                 | 30 seconds                                 |
+| Most of one item             | 9999                                       |
 
 - **Message size:** a message over the limit closes the connection at once.
 - **Rate:** every message costs one token, and tokens come back at the

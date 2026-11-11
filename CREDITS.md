@@ -13,6 +13,9 @@ Character sprites are from **Tiny Swords** by Pixel Frog.
 
 - `Warrior_Idle.png`
 - `Warrior_Run.png`
+- `Gold Stone 1.png` as `gold_coin.png`
+- `Wood Resource.png` as `wood.png`
+- `Meat Resource.png` as `meat.png`
 
 ### Why the art is not in this repository
 

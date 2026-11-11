@@ -6,6 +6,7 @@ import { useGameConnection } from "../useGameConnection.js";
 import ConnectionStatus from "../components/ConnectionStatus.jsx";
 import GameCanvas from "../components/GameCanvas.jsx";
 import ChatPanel from "../components/ChatPanel.jsx";
+import InventoryPanel from "../components/InventoryPanel.jsx";
 
 export default function Play() {
   const { selected } = useSelectedCharacter();
@@ -33,10 +34,17 @@ export default function Play() {
       </div>
       <ConnectionStatus state={game} onReconnect={game.reconnect} />
       <GameCanvas character={selected} connection={live} />
-      <ChatPanel connection={live} you={selected.id} />
+      <div className="row g-3">
+        <div className="col-md-8">
+          <ChatPanel connection={live} you={selected.id} />
+        </div>
+        <div className="col-md-4">
+          <InventoryPanel connection={live} />
+        </div>
+      </div>
       <p className="text-body-secondary mt-2 mb-0">
-        Move with the arrow keys or WASD. Press Enter to chat, and Escape to go
-        back to the game.
+        Move with the arrow keys or WASD. Press E next to an item to pick it up.
+        Press Enter to chat, and Escape to go back to the game.
       </p>
       <p className="text-body-secondary mt-2 mb-0">
         Move with the arrow keys or WASD.

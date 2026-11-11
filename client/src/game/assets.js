@@ -39,3 +39,23 @@ export async function loadSheets(baseUrl = "/sprites/") {
   }
   return sheets;
 }
+
+// Item pictures by item code, each with the size to draw it on the map.
+// Like the character sheets, they come from the Tiny Swords pack and are
+// not in git: a missing one is left out, and the game draws a colored dot.
+export const ITEM_SPRITES = {
+  // The coin is small inside a large, mostly empty picture, so draw it bigger.
+  gold_coin: { src: "/sprites/items/gold_coin.png", size: 64 },
+  meat: { src: "/sprites/items/meat.png", size: 32 },
+  wood: { src: "/sprites/items/wood.png", size: 32 },
+};
+
+export async function loadItemImages(sources = ITEM_SPRITES) {
+  const entries = await Promise.all(
+    Object.entries(sources).map(async ([code, { src, size }]) => [
+      code,
+      { image: await loadImage(src).catch(() => null), size },
+    ]),
+  );
+  return Object.fromEntries(entries.filter(([, sprite]) => sprite.image));
+}

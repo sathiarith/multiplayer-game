@@ -268,3 +268,49 @@ test("the score is not part of the snapshot", () => {
   world.add({ ...aria, score: 7 });
   expect(Object.keys(world.snapshot().players[0])).not.toContain("score");
 });
+
+const loot = [
+  { item: "gold_coin", col: 2, row: 2 }, // center (100, 100), where Aria stands
+  { item: "wood", col: 5, row: 2 }, // center (220, 100), 120 px away
+];
+
+test("items lie at the center of their tiles and appear in the snapshot", () => {
+  const world = createWorld(room, { spawns: loot });
+  expect(world.snapshot().items).toEqual([
+    { id: 1, item: "gold_coin", x: 100, y: 100 },
+    { id: 2, item: "wood", x: 220, y: 100 },
+  ]);
+});
+
+test("an item within reach may be picked up, and one too far may not", () => {
+  const world = createWorld(room, { spawns: loot });
+  world.add(aria);
+  expect(world.checkPickup(1, 1, 48)).toEqual({ ok: true, item: "gold_coin" });
+  expect(world.checkPickup(1, 2, 48)).toEqual({ ok: false, reason: "too_far" });
+});
+
+test("a taken item is gone for everyone until it comes back", () => {
+  const world = createWorld(room, { spawns: loot, respawnTicks: 3 });
+  world.add(aria);
+  world.add(borin);
+
+  world.take(1);
+  expect(world.snapshot().items.map((i) => i.id)).toEqual([2]);
+  expect(world.checkPickup(2, 1, 1000)).toEqual({ ok: false, reason: "gone" });
+
+  steps(world, 2);
+  expect(world.snapshot().items.map((i) => i.id)).toEqual([2]);
+  steps(world, 1);
+  expect(world.snapshot().items.map((i) => i.id)).toEqual([1, 2]);
+});
+
+test("an unknown item, or a player not in the world, gets 'gone'", () => {
+  const world = createWorld(room, { spawns: loot });
+  world.add(aria);
+  expect(world.checkPickup(1, 99, 48)).toEqual({ ok: false, reason: "gone" });
+  expect(world.checkPickup(42, 1, 48)).toEqual({ ok: false, reason: "gone" });
+});
+
+test("a world without loot has no items", () => {
+  expect(createWorld(room).snapshot().items).toEqual([]);
+});

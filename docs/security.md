@@ -34,6 +34,7 @@ Handled:
   in REST.
 - `GET /api/leaderboard` requires login and shows only rank, name, level and
   score: no ids and no usernames.
+- Pickups are checked on the server: the item must still be on the map and within 48 pixels of the character. The client only names the item it wants.
 
 Evidence: `realtime.test.js` (the ownership and handshake tests),
 `characters.test.js` (`findCharacter` and `saveCharacterState`), and the
@@ -149,6 +150,7 @@ Handled:
   database, which stays the source of truth.
 - The Socket.IO Redis adapter is off by default, because enabling it would make every server’s broadcasts reach every server’s players. The reasoning is in `docs/decisions/0003-scaling-the-game-server.md`.
 - Chat has its own limit (5 messages per 10 seconds) and range (8 tiles). A person’s mistakes are refused without counting as violations, and malformed chat events do count.
+- Inventory changes are written to the database at once, inside a transaction, before the item leaves the map. Two players grabbing one item cannot both get it (tested). A stack is capped at 9999 by the code and by a database `CHECK`.
 
 Accepted trade-offs:
 

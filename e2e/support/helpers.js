@@ -71,3 +71,7 @@ export async function hold(page, key, ms) {
   await page.waitForTimeout(ms);
   await page.keyboard.up(key);
 }
+
+// Items lying on the map, read from the development-only window into the canvas.
+export const groundItems = (page) =>
+  page.evaluate(() => window.__game?.items() ?? []);

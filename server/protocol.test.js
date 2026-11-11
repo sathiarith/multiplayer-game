@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { PROTOCOL } from "./protocol.js";
 import { STALE_AFTER_TICKS } from "./world.js";
 import { CHAT_MAX_LENGTH } from "./chat.js";
+import { MAX_STACK } from "./inventory.js";
 
 const doc = fs.readFileSync(
   new URL("../docs/protocol.md", import.meta.url),
@@ -59,6 +60,11 @@ test("the limits in the document match the code", () => {
     `${PROTOCOL.chat.burst} per ${PROTOCOL.chat.burst / PROTOCOL.chat.perSecond} seconds`,
   );
   expect(row("Chat range")).toContain(`${PROTOCOL.chat.radius} pixels`);
+  expect(row("Pickup range")).toContain(`${PROTOCOL.pickup.range} pixels`);
+  expect(row("Item respawn")).toContain(
+    `${PROTOCOL.pickup.respawnSeconds} seconds`,
+  );
+  expect(row("Most of one item")).toContain(String(PROTOCOL.pickup.maxStack));
 });
 
 test("every chat rejection reason is documented", () => {
@@ -68,4 +74,13 @@ test("every chat rejection reason is documented", () => {
 
 test("the chat length in the protocol is the one the code enforces", () => {
   expect(PROTOCOL.chat.maxLength).toBe(CHAT_MAX_LENGTH);
+});
+
+test("every pickup rejection reason is documented", () => {
+  for (const reason of PROTOCOL.pickupRejections)
+    expect(doc, reason).toContain(`\`${reason}\``);
+});
+
+test("the stack limit in the protocol is the one the code enforces", () => {
+  expect(PROTOCOL.pickup.maxStack).toBe(MAX_STACK);
 });

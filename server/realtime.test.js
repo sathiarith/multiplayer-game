@@ -774,3 +774,108 @@ test("a malformed chat event is a violation", async () => {
     expect((await kicked).reason).toBe("too_many_messages");
   });
 });
+
+const groundItem = async (socket, code) =>
+  (
+    await snapshotWhere(socket, (s) => s.items?.some((i) => i.item === code))
+  ).items.find((i) => i.item === code);
+
+test("a new character's welcome carries an empty inventory", async () => {
+  const alice = await rt.player("alice", "Aria");
+  const { welcome } = await rt.open(asPlayer(alice));
+  expect(welcome.inventory).toEqual([]);
+});
+
+test("picking up an item within reach saves it, and it vanishes for everyone", async () => {
+  const alice = await rt.player("alice", "Aria");
+  const bob = await rt.player("bobby", "Borin");
+  const a = await rt.open(asPlayer(alice));
+  const b = await rt.open(asPlayer(bob));
+  const gold = await groundItem(a.socket, "gold_coin"); // one tile from the spawn point
+  const changed = new Promise((resolve) => a.socket.once("inventory", resolve));
+
+  a.socket.emit("pickup", { id: gold.id });
+
+  expect(await changed).toEqual({
+    items: [
+      {
+        code: "gold_coin",
+        name: "Gold coin",
+        description: expect.any(String),
+        quantity: 1,
+      },
+    ],
+  });
+  await snapshotWhere(b.socket, (s) => !s.items.some((i) => i.id === gold.id));
+  const again = await rt.open(asPlayer(alice)); // a new connection reads what was saved
+  expect(again.welcome.inventory).toEqual([
+    expect.objectContaining({ code: "gold_coin", quantity: 1 }),
+  ]);
+});
+
+test("two players reaching for the same item: exactly one gets it", async () => {
+  const alice = await rt.player("alice", "Aria");
+  const bob = await rt.player("bobby", "Borin");
+  const a = await rt.open(asPlayer(alice));
+  const b = await rt.open(asPlayer(bob));
+  const gold = await groundItem(a.socket, "gold_coin");
+  const outcomes = [];
+  for (const { socket } of [a, b]) {
+    socket.once("inventory", () => outcomes.push("got it"));
+    socket.once("pickup_rejected", ({ reason }) => outcomes.push(reason));
+  }
+
+  a.socket.emit("pickup", { id: gold.id });
+  b.socket.emit("pickup", { id: gold.id });
+
+  await vi.waitFor(() => expect(outcomes).toHaveLength(2));
+  expect(outcomes.sort()).toEqual(["gone", "got it"]);
+  expect(
+    rt.db.prepare("SELECT SUM(quantity) AS total FROM inventory").get().total,
+  ).toBe(1);
+});
+
+test("an item out of reach, or one that does not exist, is refused without penalty", async () => {
+  const alice = await rt.player("alice", "Aria");
+  const a = await rt.open(asPlayer(alice));
+  const wood = await groundItem(a.socket, "wood"); // eight tiles away
+  const rejected = hear(a.socket, "pickup_rejected");
+
+  a.socket.emit("pickup", { id: wood.id });
+  a.socket.emit("pickup", { id: 999 });
+
+  await vi.waitFor(() =>
+    expect(rejected.map((r) => r.reason)).toEqual(["too_far", "gone"]),
+  );
+  expect(a.socket.connected).toBe(true);
+});
+
+test("a malformed pickup is a violation", async () => {
+  await withServer({ guard: { burst: 100, maxViolations: 3 } }, async (srv) => {
+    const alice = await srv.player("alice", "Aria");
+    const { socket } = await srv.open(asPlayer(alice));
+    const { kicked } = watch(socket);
+
+    for (let i = 0; i < 5; i++) socket.emit("pickup", { id: "1" });
+
+    expect((await kicked).reason).toBe("too_many_messages");
+  });
+});
+
+test("if the inventory cannot be saved, the item stays on the ground", async () => {
+  await withServer({}, async (srv) => {
+    const alice = await srv.player("alice", "Aria");
+    const { socket } = await srv.open(asPlayer(alice));
+    const gold = await groundItem(socket, "gold_coin");
+    const rejected = new Promise((resolve) =>
+      socket.once("pickup_rejected", resolve),
+    );
+
+    srv.db.exec("DROP TABLE inventory"); // saving fails from now on
+    socket.emit("pickup", { id: gold.id });
+
+    expect(await rejected).toEqual({ reason: "error" });
+    const snap = await snapshotWhere(socket, () => true);
+    expect(snap.items.some((i) => i.id === gold.id)).toBe(true);
+  });
+});
