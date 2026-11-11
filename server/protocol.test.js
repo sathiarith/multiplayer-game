@@ -65,6 +65,16 @@ test("the limits in the document match the code", () => {
     `${PROTOCOL.pickup.respawnSeconds} seconds`,
   );
   expect(row("Most of one item")).toContain(String(PROTOCOL.pickup.maxStack));
+  expect(row("Trade range")).toContain(`${PROTOCOL.trade.range} pixels`);
+  expect(row("Trade offer lifetime")).toContain(
+    `${PROTOCOL.trade.offerSeconds} seconds`,
+  );
+  expect(row("Open offers per player")).toContain(
+    String(PROTOCOL.trade.maxOffers),
+  );
+  expect(row("Items per side of a trade")).toContain(
+    String(PROTOCOL.trade.maxLines),
+  );
 });
 
 test("every chat rejection reason is documented", () => {
@@ -83,4 +93,9 @@ test("every pickup rejection reason is documented", () => {
 
 test("the stack limit in the protocol is the one the code enforces", () => {
   expect(PROTOCOL.pickup.maxStack).toBe(MAX_STACK);
+});
+
+test("every trade result reason is documented", () => {
+  for (const reason of PROTOCOL.tradeReasons)
+    expect(doc, reason).toContain(`\`${reason}\``);
 });

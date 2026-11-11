@@ -35,6 +35,7 @@ Handled:
 - `GET /api/leaderboard` requires login and shows only rank, name, level and
   score: no ids and no usernames.
 - Pickups are checked on the server: the item must still be on the map and within 48 pixels of the character. The client only names the item it wants.
+- Only the named receiver can accept or decline a trade offer, and only its sender can cancel it. Anyone else gets gone, which reveals nothing about the offer.
 
 Evidence: `realtime.test.js` (the ownership and handshake tests),
 `characters.test.js` (`findCharacter` and `saveCharacterState`), and the
@@ -151,6 +152,7 @@ Handled:
 - The Socket.IO Redis adapter is off by default, because enabling it would make every server’s broadcasts reach every server’s players. The reasoning is in `docs/decisions/0003-scaling-the-game-server.md`.
 - Chat has its own limit (5 messages per 10 seconds) and range (8 tiles). A person’s mistakes are refused without counting as violations, and malformed chat events do count.
 - Inventory changes are written to the database at once, inside a transaction, before the item leaves the map. Two players grabbing one item cannot both get it (tested). A stack is capped at 9999 by the code and by a database `CHECK`.
+- A trade runs in one database transaction, and every quantity is checked inside it at the moment of the trade, never trusted from when the offer was made. Tests offer the same coins to two players and accept both at once, and force a failure halfway through a trade; in both cases no item is created or lost.
 
 Accepted trade-offs:
 

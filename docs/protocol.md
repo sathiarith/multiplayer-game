@@ -35,19 +35,26 @@ does not exist.
 
 ## Events
 
-| Event             | Direction        | Payload                                                 | Validated by                                                                                |
-| ----------------- | ---------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `input`           | client to server | `{ seq, up, down, left, right }`                        | The server (`parseInput` in `server/world.js`)                                              |
-| `welcome`         | server to client | `{ character, you, tickRate, inventory }`               | The client trusts the server                                                                |
-| `snapshot`        | server to client | `{ tick, players: [...], items: [{ id, item, x, y }] }` | The client trusts the server                                                                |
-| `replaced`        | server to client | none                                                    | The client trusts the server                                                                |
-| `kicked`          | server to client | `{ reason }`                                            | The client trusts the server                                                                |
-| `chat`            | client to server | `{ text }`                                              | The server (`parseChat` in `server/chat.js`)                                                |
-| `chat`            | server to client | `{ id, from: { id, name }, text, at }`                  | The client trusts the server, and escapes the text when showing it                          |
-| `chat_rejected`   | server to client | `{ reason }`                                            | The client trusts the server                                                                |
-| `pickup`          | client to server | `{ id }`                                                | The server (`parsePickup` in `server/loot.js`, range and availability in `server/world.js`) |
-| `inventory`       | server to client | `{ items: [{ code, name, description, quantity }] }`    | The client trusts the server                                                                |
-| `pickup_rejected` | server to client | `{ reason }`                                            | The client trusts the server                                                                |
+| Event             | Direction        | Payload                                                          | Validated by                                                                                |
+| ----------------- | ---------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `input`           | client to server | `{ seq, up, down, left, right }`                                 | The server (`parseInput` in `server/world.js`)                                              |
+| `welcome`         | server to client | `{ character, you, tickRate, inventory, catalog }`               | The client trusts the server                                                                |
+| `snapshot`        | server to client | `{ tick, players: [...], items: [{ id, item, x, y }] }`          | The client trusts the server                                                                |
+| `replaced`        | server to client | none                                                             | The client trusts the server                                                                |
+| `kicked`          | server to client | `{ reason }`                                                     | The client trusts the server                                                                |
+| `chat`            | client to server | `{ text }`                                                       | The server (`parseChat` in `server/chat.js`)                                                |
+| `chat`            | server to client | `{ id, from: { id, name }, text, at }`                           | The client trusts the server, and escapes the text when showing it                          |
+| `chat_rejected`   | server to client | `{ reason }`                                                     | The client trusts the server                                                                |
+| `pickup`          | client to server | `{ id }`                                                         | The server (`parsePickup` in `server/loot.js`, range and availability in `server/world.js`) |
+| `inventory`       | server to client | `{ items: [{ code, name, description, quantity }] }`             | The client trusts the server                                                                |
+| `pickup_rejected` | server to client | `{ reason }`                                                     | The client trusts the server                                                                |
+| `trade_offer`     | client to server | `{ to, give: [{ code, quantity }], want: [{ code, quantity }] }` | The server (`parseOffer` in `server/offers.js`)                                             |
+| `trade_accept`    | client to server | `{ id }`                                                         | The server: only the receiver                                                               |
+| `trade_decline`   | client to server | `{ id }`                                                         | The server: only the receiver                                                               |
+| `trade_cancel`    | client to server | `{ id }`                                                         | The server: only the sender                                                                 |
+| `trade_offered`   | server to client | `{ id, from: { id, name }, give, want, expiresAt }`              | The client trusts the server                                                                |
+| `trade_sent`      | server to client | `{ id, to: { id, name }, give, want, expiresAt }`                | The client trusts the server                                                                |
+| `trade_result`    | server to client | `{ id, ok, reason }`                                             | The client trusts the server                                                                |
 
 ### `input`
 
@@ -65,6 +72,7 @@ held, and once when the keys change. The client never sends a position.
 Sent once after the handshake. `character` is the saved character, `you` is
 its id, and `tickRate` is the server's steps per second.
 `inventory` is what the character carries, in the same shape as the `inventory` event’s `items`.
+`catalog` lists every item that exists, as `[{ code, name }]`.
 
 ### `snapshot`
 
@@ -120,6 +128,28 @@ Only to the sender. `reason` is `gone` (taken already, or no such item),
 `too_far` (out of range), `full` (the stack is at its limit) or `error` (the
 server could not save it). None of these is a violation.
 
+### Trading
+
+A player offers items to one nearby player with `trade_offer`: `give` and
+`want` each list up to 4 different items, and at least one of them is not
+empty (a gift wants nothing). The receiver gets `trade_offered` and the sender
+`trade_sent`, both with the item names. The receiver answers with
+`trade_accept` or `trade_decline`, and the sender may `trade_cancel`. An offer
+is answered once and expires after its lifetime.
+
+Accepting runs the trade in one database transaction: every quantity is
+checked at that moment, and either every item moves or none does. Both players
+then get `trade_result` and, after a success, their new `inventory`.
+
+`trade_result` is `{ id, ok: true }` for a completed trade, or
+`{ id, ok: false, reason }`. When an offer is refused before it exists, `id`
+is `null`. The reasons are `invalid` (to yourself, or an unknown item),
+`not_here` (the other player is not playing), `too_far`, `missing_items`,
+`too_many_offers`, `full` (the receiver cannot carry that many), `gone` (no
+such offer for you: answered, expired, withdrawn, or not yours), `declined`,
+`cancelled`, and `error`. None of these is a violation, but a malformed trade
+message is.
+
 ## Limits
 
 | Limit                        | Value                                      |
@@ -137,6 +167,10 @@ server could not save it). None of these is a violation.
 | Pickup range                 | 48 pixels                                  |
 | Item respawn                 | 30 seconds                                 |
 | Most of one item             | 9999                                       |
+| Trade range                  | 96 pixels                                  |
+| Trade offer lifetime         | 30 seconds                                 |
+| Open offers per player       | 3                                          |
+| Items per side of a trade    | 4                                          |
 
 - **Message size:** a message over the limit closes the connection at once.
 - **Rate:** every message costs one token, and tokens come back at the
