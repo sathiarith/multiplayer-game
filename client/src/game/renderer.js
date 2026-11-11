@@ -87,15 +87,48 @@ function drawName(ctx, player, isYou) {
   ctx.fillText(player.name, player.x, y);
 }
 
+const ITEM_COLORS = { gold_coin: "#facc15", meat: "#ef4444", wood: "#a16207" };
+
+// With a picture, draw it centered on the item (a whole square picture, or the
+// first square frame of a strip). Without one, draw a colored dot.
+function drawGroundItem(ctx, item, sprite) {
+  if (sprite) {
+    const { image, size } = sprite;
+    const frame = Math.min(image.width, image.height);
+    ctx.drawImage(
+      image,
+      0,
+      0,
+      frame,
+      frame,
+      item.x - size / 2,
+      item.y - size / 2,
+      size,
+      size,
+    );
+    return;
+  }
+  ctx.beginPath();
+  ctx.arc(item.x, item.y, 7, 0, Math.PI * 2);
+  ctx.fillStyle = ITEM_COLORS[item.item] ?? "#9ca3af";
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
+  ctx.stroke();
+}
+
 // Draws the map, then every player: [{ player: {id, name, x, y, size}, anim }].
 export function renderWorld(
   ctx,
   level,
   entries,
   sheets,
-  { youId, showHitbox = false } = {},
+  { youId, showHitbox = false, groundItems = [] } = {},
 ) {
   drawMap(ctx, level);
+  for (const item of groundItems)
+    drawGroundItem(ctx, item, sheets?.items?.[item.item]);
+
   // Draw the ones lower on the screen later, so they overlap correctly.
   const ordered = [...entries].sort((a, b) => a.player.y - b.player.y);
   for (const { player, anim } of ordered) {

@@ -28,6 +28,7 @@ function fakeConnection() {
         listener = null;
       };
     }),
+    sendPickup: vi.fn(),
     push: (snapshot) => listener?.(snapshot),
     get listening() {
       return listener !== null;
@@ -305,4 +306,79 @@ test("keys typed into a text box do not move the character", () => {
 
   expect(connection.sendInput).not.toHaveBeenCalled();
   expect(arrow.defaultPrevented).toBe(false); // the text box keeps its arrow keys
+});
+
+const coin = (id, x) => ({ id, item: "gold_coin", x, y: 100 });
+
+test("an item with no picture is drawn as a dot", () => {
+  const { browser, connection, ctx, game } = setup();
+  game.start();
+  connection.push({ tick: 1, players: [mine()], items: [coin(1, 300)] });
+  browser.frame(16);
+  expect(ctx.arc).toHaveBeenCalledWith(300, 100, 7, 0, Math.PI * 2);
+});
+
+test("an item with a picture is drawn from it, at its own size", () => {
+  const browser = fakeEnv();
+  const connection = fakeConnection();
+  const canvas = fakeCanvas();
+  const strip = { width: 896, height: 128 }; // seven square frames side by side
+  const game = createNetworkGame({
+    canvas,
+    level,
+    sheets: { ...sheets, items: { gold_coin: { image: strip, size: 64 } } },
+    connection,
+    you: 1,
+    env: browser.env,
+  });
+  game.start();
+  connection.push({
+    tick: 1,
+    players: [mine()],
+    items: [coin(1, 300), { id: 2, item: "wood", x: 400, y: 100 }],
+  });
+
+  browser.frame(16);
+
+  // The first 128 x 128 frame, drawn 64 x 64 and centered on the item.
+  expect(canvas.ctx.drawImage).toHaveBeenCalledWith(
+    strip,
+    0,
+    0,
+    128,
+    128,
+    268,
+    68,
+    64,
+    64,
+  );
+  expect(canvas.ctx.arc).toHaveBeenCalledWith(400, 100, 7, 0, Math.PI * 2); // wood has no picture
+  expect(canvas.ctx.arc).not.toHaveBeenCalledWith(300, 100, 7, 0, Math.PI * 2);
+});
+
+test("E asks to pick up the nearest item within reach", () => {
+  const { browser, connection, game } = setup();
+  game.start();
+  connection.push({
+    tick: 1,
+    players: [mine(100)],
+    items: [coin(1, 140), coin(2, 120), coin(3, 400)],
+  });
+
+  browser.press("KeyE");
+
+  expect(connection.sendPickup).toHaveBeenCalledTimes(1);
+  expect(connection.sendPickup).toHaveBeenCalledWith(2); // 20 px away beats 40 px away
+});
+
+test("E with nothing within reach sends nothing, and neither does E typed into a text box", () => {
+  const { browser, connection, game } = setup();
+  game.start();
+  connection.push({ tick: 1, players: [mine(100)], items: [coin(3, 400)] });
+  browser.press("KeyE");
+
+  connection.push({ tick: 2, players: [mine(100)], items: [coin(1, 110)] });
+  browser.typeIn("KeyE");
+
+  expect(connection.sendPickup).not.toHaveBeenCalled();
 });

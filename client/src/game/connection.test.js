@@ -180,3 +180,44 @@ test("after close no chat is sent and nothing is heard", () => {
   expect(socket.volatile.emit).not.toHaveBeenCalled();
   expect(heard).toEqual([]);
 });
+
+const gold = {
+  code: "gold_coin",
+  name: "Gold coin",
+  description: "",
+  quantity: 1,
+};
+
+test("the inventory from the welcome reaches a listener that subscribes later", () => {
+  const { connection, socket } = start();
+  socket.emit("welcome", { character: { id: 7 }, inventory: [gold] });
+
+  const seen = [];
+  connection.onInventory((items) => seen.push(items));
+
+  expect(seen).toEqual([[gold]]);
+});
+
+test("inventory changes and pickup refusals reach listeners", () => {
+  const { connection, socket } = start();
+  const seen = [];
+  const refused = [];
+  connection.onInventory((items) => seen.push(items.length));
+  connection.onPickupRejected((r) => refused.push(r.reason));
+
+  socket.emit("inventory", { items: [gold] });
+  socket.emit("pickup_rejected", { reason: "gone" });
+
+  expect(seen).toEqual([1]);
+  expect(refused).toEqual(["gone"]);
+});
+
+test("a pickup is sent volatile, and nothing after close", () => {
+  const { connection, socket } = start();
+  connection.sendPickup(3);
+  expect(socket.volatile.emit).toHaveBeenCalledWith("pickup", { id: 3 });
+
+  connection.close();
+  connection.sendPickup(4);
+  expect(socket.volatile.emit).toHaveBeenCalledTimes(1);
+});

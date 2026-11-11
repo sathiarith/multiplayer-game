@@ -11,6 +11,9 @@ import { io as defaultIo } from "socket.io-client";
 //   onChat(listener) -> unsubscribe
 //   onChatRejected(listener) -> unsubscribe
 //   close()
+//   sendPickup(id)
+//   onInventory(listener) -> unsubscribe (called at once with the latest inventory)
+//   onPickupRejected(listener) -> unsubscribe
 export function connectToGame({ characterId, onChange, io = defaultIo }) {
   // No URL: connect to the page's own origin (the Vite proxy in development).
   const socket = io({ transports: ["websocket"], auth: { characterId } });
@@ -18,6 +21,17 @@ export function connectToGame({ characterId, onChange, io = defaultIo }) {
   let settled = false; // the outcome is final, so ignore anything that follows
   const snapshotListeners = new Set();
   const chatListeners = new Set();
+  const inventoryListeners = new Set();
+  const pickupRejectionListeners = new Set();
+  let lastInventory = null;
+
+  // The newest inventory is kept, so a listener that subscribes late (React
+  // subscribes after the welcome) still gets it at once.
+  function publishInventory(items) {
+    if (closed) return;
+    lastInventory = items;
+    for (const listener of inventoryListeners) listener(items);
+  }
   const rejectionListeners = new Set();
 
   const report = (state) => {
@@ -30,9 +44,15 @@ export function connectToGame({ characterId, onChange, io = defaultIo }) {
 
   report({ status: "connecting" });
 
-  socket.on("welcome", ({ character }) =>
-    report({ status: "connected", character }),
-  );
+  socket.on("welcome", ({ character, inventory }) => {
+    if (inventory) publishInventory(inventory);
+    report({ status: "connected", character });
+  });
+  socket.on("inventory", ({ items }) => publishInventory(items));
+  socket.on("pickup_rejected", (rejection) => {
+    if (closed) return;
+    for (const listener of pickupRejectionListeners) listener(rejection);
+  });
   socket.on("replaced", () => settle({ status: "replaced" }));
   socket.on("kicked", () => settle({ status: "kicked" }));
   socket.on("connect_error", (err) => {
@@ -92,6 +112,22 @@ export function connectToGame({ characterId, onChange, io = defaultIo }) {
       rejectionListeners.clear();
       socket.removeAllListeners();
       socket.close(); // also stops any reconnection attempts
+      inventoryListeners.clear();
+      pickupRejectionListeners.clear();
+    },
+    sendPickup(id) {
+      if (!closed) socket.volatile.emit("pickup", { id });
+    },
+
+    onInventory(listener) {
+      inventoryListeners.add(listener);
+      if (lastInventory) listener(lastInventory);
+      return () => inventoryListeners.delete(listener);
+    },
+
+    onPickupRejected(listener) {
+      pickupRejectionListeners.add(listener);
+      return () => pickupRejectionListeners.delete(listener);
     },
   };
 }
