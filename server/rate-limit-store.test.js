@@ -31,7 +31,9 @@ const newDb = () => {
 // shared between app instances, which is what a real shared store allows.
 class MapStore {
   localKeys = false;
-  hits = new Map();
+  constructor(hits = new Map()) {
+    this.hits = hits; // pass a shared Map to imitate storage shared between servers, like Redis
+  }
   windowMs = 0;
   init(options) {
     this.windowMs = options.windowMs;
@@ -88,11 +90,12 @@ test("each limiter is given its own store, by name", () => {
 
 test("a store that is shared keeps the count across a restart, even for the right password", async () => {
   const db = newDb();
-  const shared = { login: new MapStore(), register: new MapStore() };
+  // Each app gets its own store objects, sharing the data underneath, as with Redis.
+  const shared = { login: new Map(), register: new Map() };
   const options = {
     ...base,
     rateLimits: twoFailures,
-    rateLimitStore: (name) => shared[name],
+    rateLimitStore: (name) => new MapStore(shared[name]),
   };
 
   await useUpTheLimit(createApp(db, options));

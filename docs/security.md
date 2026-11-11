@@ -123,7 +123,7 @@ Evidence: `users.test.js`, `characters.test.js`, `validation.test.js`.
 
 Deferred:
 
-- Chat (Sprint 7) must be escaped when displayed in the client.
+- The chat box (Story 7.1, Part 2) must show text as text, never through `innerHTML` or `dangerouslySetInnerHTML`.
 
 ## A06 Insecure Design
 
@@ -149,6 +149,7 @@ Handled:
   cannot report one. The leaderboard's Redis index is rebuilt from the
   database, which stays the source of truth.
 - The Socket.IO Redis adapter is off by default, because enabling it would make every server’s broadcasts reach every server’s players. The reasoning is in `docs/decisions/0003-scaling-the-game-server.md`.
+- Chat has its own limit (5 messages per 10 seconds) and range (8 tiles). A person’s mistakes are refused without counting as violations, and malformed chat events do count.
 
 Accepted trade-offs:
 

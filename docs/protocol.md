@@ -35,13 +35,16 @@ does not exist.
 
 ## Events
 
-| Event      | Direction        | Payload                                                   | Validated by                                   |
-| ---------- | ---------------- | --------------------------------------------------------- | ---------------------------------------------- |
-| `input`    | client to server | `{ seq, up, down, left, right }`                          | The server (`parseInput` in `server/world.js`) |
-| `welcome`  | server to client | `{ character, you, tickRate }`                            | The client trusts the server                   |
-| `snapshot` | server to client | `{ tick, players: [{ id, name, x, y, hp, maxHp, ack }] }` | The client trusts the server                   |
-| `replaced` | server to client | none                                                      | The client trusts the server                   |
-| `kicked`   | server to client | `{ reason }`                                              | The client trusts the server                   |
+| Event           | Direction        | Payload                                                   | Validated by                                                       |
+| --------------- | ---------------- | --------------------------------------------------------- | ------------------------------------------------------------------ |
+| `input`         | client to server | `{ seq, up, down, left, right }`                          | The server (`parseInput` in `server/world.js`)                     |
+| `welcome`       | server to client | `{ character, you, tickRate }`                            | The client trusts the server                                       |
+| `snapshot`      | server to client | `{ tick, players: [{ id, name, x, y, hp, maxHp, ack }] }` | The client trusts the server                                       |
+| `replaced`      | server to client | none                                                      | The client trusts the server                                       |
+| `kicked`        | server to client | `{ reason }`                                              | The client trusts the server                                       |
+| `chat`          | client to server | `{ text }`                                                | The server (`parseChat` in `server/chat.js`)                       |
+| `chat`          | server to client | `{ id, from: { id, name }, text, at }`                    | The client trusts the server, and escapes the text when showing it |
+| `chat_rejected` | server to client | `{ reason }`                                              | The client trusts the server                                       |
 
 ### `input`
 
@@ -76,6 +79,23 @@ and offer a way back in.
 The server is about to close the connection because of too many violations
 (see Limits). `reason` is always `too_many_messages`.
 
+### `chat`
+
+From a client: exactly `{ text }`, where `text` is a string. The server trims
+it, and refuses it as `invalid` if it is empty, longer than the limit (counted
+in characters, not bytes), or contains control characters or Unicode
+direction controls. Anything that is not exactly `{ text: string }` is a
+violation. An accepted message goes to every player within the chat range,
+the speaker included, as `{ id, from: { id, name }, text, at }`, where `at` is
+the server's time. The server does not remove HTML: a client must show the
+text as text, never as markup.
+
+### `chat_rejected`
+
+Only to the sender, when a message was not delivered. `reason` is `invalid`
+(empty, too long, or forbidden characters) or `too_fast` (over the chat rate).
+Neither counts as a violation.
+
 ## Limits
 
 | Limit                        | Value                                      |
@@ -87,6 +107,9 @@ The server is about to close the connection because of too many violations
 | Violations before disconnect | 20 in 10 seconds                           |
 | Input released after         | 20 ticks without input                     |
 | Progress saved               | every 30 seconds, and when a player leaves |
+| Chat message length          | 200 characters                             |
+| Chat messages per person     | 5 per 10 seconds                           |
+| Chat range                   | 320 pixels (8 tiles)                       |
 
 - **Message size:** a message over the limit closes the connection at once.
 - **Rate:** every message costs one token, and tokens come back at the
