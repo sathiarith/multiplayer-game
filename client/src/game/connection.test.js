@@ -221,3 +221,50 @@ test("a pickup is sent volatile, and nothing after close", () => {
   connection.sendPickup(4);
   expect(socket.volatile.emit).toHaveBeenCalledTimes(1);
 });
+
+test("the catalog from the welcome is kept", () => {
+  const { connection, socket } = start();
+  expect(connection.catalog()).toEqual([]);
+
+  socket.emit("welcome", {
+    character: { id: 7 },
+    catalog: [{ code: "wood", name: "Wood" }],
+  });
+
+  expect(connection.catalog()).toEqual([{ code: "wood", name: "Wood" }]);
+});
+
+test("trade events reach their listeners until they unsubscribe", () => {
+  const { connection, socket } = start();
+  const seen = [];
+  const offOffered = connection.onTradeOffered((o) =>
+    seen.push(`offered ${o.id}`),
+  );
+  connection.onTradeSent((o) => seen.push(`sent ${o.id}`));
+  connection.onTradeResult((r) => seen.push(`result ${r.id}`));
+
+  socket.emit("trade_offered", { id: "a" });
+  socket.emit("trade_sent", { id: "b" });
+  socket.emit("trade_result", { id: "b", ok: true });
+  offOffered();
+  socket.emit("trade_offered", { id: "c" });
+
+  expect(seen).toEqual(["offered a", "sent b", "result b"]);
+});
+
+test("trade messages are sent volatile, with the right events", () => {
+  const { connection, socket } = start();
+  const give = [{ code: "gold_coin", quantity: 1 }];
+
+  connection.sendTradeOffer({ to: 2, give, want: [] });
+  connection.sendTradeAccept("a");
+  connection.sendTradeDecline("b");
+  connection.sendTradeCancel("c");
+
+  expect(socket.volatile.emit.mock.calls).toEqual([
+    ["trade_offer", { to: 2, give, want: [] }],
+    ["trade_accept", { id: "a" }],
+    ["trade_decline", { id: "b" }],
+    ["trade_cancel", { id: "c" }],
+  ]);
+});

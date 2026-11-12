@@ -1,5 +1,6 @@
 import { TICK_RATE } from "../shared/prediction.js";
 import { PICKUP_RANGE } from "../shared/items.js";
+import { MAX_TRADE_LINES, TRADE_RANGE } from "../shared/trade.js";
 
 // The rules of the game connection, in one place. `docs/protocol.md` describes
 // them, and server/protocol.test.js fails if the two disagree.
@@ -39,7 +40,12 @@ export const PROTOCOL = {
     ],
   },
   refusals: ["not_authenticated", "not_found", "internal_error"],
-  trade: { range: 96, offerSeconds: 30, maxOffers: 3, maxLines: 4 },
+  trade: {
+    range: TRADE_RANGE,
+    offerSeconds: 30,
+    maxOffers: 3,
+    maxLines: MAX_TRADE_LINES,
+  },
   tradeReasons: [
     "invalid",
     "not_here",

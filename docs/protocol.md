@@ -198,3 +198,5 @@ designed around them.
   snapshots.
 - It does not reconnect by itself after `replaced`, `kicked`, or a refusal.
 - It sends chat as volatile, so a message typed while disconnected is dropped, not delivered late. It shows only messages the server echoed back.
+- It lists trading partners from the snapshots, within the trade range, and
+  counts an offer down from its `expiresAt`. The server checks both again.
