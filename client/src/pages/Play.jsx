@@ -7,6 +7,7 @@ import ConnectionStatus from "../components/ConnectionStatus.jsx";
 import GameCanvas from "../components/GameCanvas.jsx";
 import ChatPanel from "../components/ChatPanel.jsx";
 import InventoryPanel from "../components/InventoryPanel.jsx";
+import TradePanel from "../components/TradePanel.jsx";
 
 export default function Play() {
   const { selected } = useSelectedCharacter();
@@ -40,6 +41,7 @@ export default function Play() {
         </div>
         <div className="col-md-4">
           <InventoryPanel connection={live} />
+          <TradePanel connection={live} you={selected.id} />
         </div>
       </div>
       <p className="text-body-secondary mt-2 mb-0">
