@@ -21,5 +21,11 @@ test("migrations run once and record the schema version", () => {
     )
     .all()
     .map((r) => r.name);
-  expect(tables).toEqual(["characters", "inventory", "items", "users"]);
+  expect(tables).toEqual([
+    "characters",
+    "inventory",
+    "items",
+    "levels",
+    "users",
+  ]);
 });
