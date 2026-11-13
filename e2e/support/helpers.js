@@ -75,3 +75,7 @@ export async function hold(page, key, ms) {
 // Items lying on the map, read from the development-only window into the canvas.
 export const groundItems = (page) =>
   page.evaluate(() => window.__game?.items() ?? []);
+
+// Monsters on the map, read from the development-only window into the canvas.
+export const monstersOn = (page) =>
+  page.evaluate(() => window.__game?.monsters() ?? []);

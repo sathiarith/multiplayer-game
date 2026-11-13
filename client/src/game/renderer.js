@@ -117,22 +117,80 @@ function drawGroundItem(ctx, item, sprite) {
   ctx.stroke();
 }
 
+const BAR = { width: 32, height: 4 };
+const STRIKE_MS = 400; // the attack animation plays once over this long
+
+// A health bar centered at x, its top at y: green above half, yellow above a quarter, then red.
+function drawHealthBar(ctx, x, y, hp, maxHp) {
+  if (!maxHp) return;
+  const share = Math.max(0, Math.min(1, hp / maxHp));
+  ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+  ctx.fillRect(x - BAR.width / 2 - 1, y - 1, BAR.width + 2, BAR.height + 2);
+  ctx.fillStyle =
+    share > 0.5 ? "#22c55e" : share > 0.25 ? "#eab308" : "#ef4444";
+  ctx.fillRect(x - BAR.width / 2, y, BAR.width * share, BAR.height);
+}
+
+// A monster from its strips (idle, or attack when it has just struck), mirrored
+// when it faces left. Without pictures, a green circle.
+function drawMonster(ctx, monster, sprite, now) {
+  const image = monster.attacking ? sprite?.attack : sprite?.idle;
+  if (image) {
+    const frame = image.height; // square frames, side by side
+    const frames = Math.max(1, Math.floor(image.width / frame));
+    const index = monster.attacking
+      ? Math.min(
+          frames - 1,
+          Math.floor(((now - monster.strikeStart) / STRIKE_MS) * frames),
+        )
+      : Math.floor(now / 100) % frames;
+    const { size } = sprite;
+    ctx.save();
+    ctx.translate(monster.x, monster.y);
+    if (monster.facing < 0) ctx.scale(-1, 1);
+    ctx.drawImage(
+      image,
+      index * frame,
+      0,
+      frame,
+      frame,
+      -size / 2,
+      -size / 2,
+      size,
+      size,
+    );
+    ctx.restore();
+  } else {
+    ctx.beginPath();
+    ctx.arc(monster.x, monster.y, 12, 0, Math.PI * 2);
+    ctx.fillStyle = "#65a30d";
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
+    ctx.stroke();
+  }
+  drawHealthBar(ctx, monster.x, monster.y - 40, monster.hp, monster.maxHp);
+}
+
 // Draws the map, then every player: [{ player: {id, name, x, y, size}, anim }].
 export function renderWorld(
   ctx,
   level,
   entries,
   sheets,
-  { youId, showHitbox = false, groundItems = [] } = {},
+  { youId, showHitbox = false, groundItems = [], monsters = [], now = 0 } = {},
 ) {
   drawMap(ctx, level);
   for (const item of groundItems)
     drawGroundItem(ctx, item, sheets?.items?.[item.item]);
+  for (const monster of monsters)
+    drawMonster(ctx, monster, sheets?.monsters?.[monster.type], now);
 
   // Draw the ones lower on the screen later, so they overlap correctly.
   const ordered = [...entries].sort((a, b) => a.player.y - b.player.y);
   for (const { player, anim } of ordered) {
     drawPlayer(ctx, player, anim, sheets, showHitbox);
     drawName(ctx, player, player.id === youId);
+    drawHealthBar(ctx, player.x, player.y - 30, player.hp, player.maxHp);
   }
 }
