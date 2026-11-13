@@ -43,6 +43,7 @@ test("a player starts where the character was saved", () => {
     y: 100,
     hp: 100,
     maxHp: 100,
+    level: 1,
     ack: 0,
   });
 });
@@ -189,6 +190,7 @@ test("a snapshot is compact, rounded, and carries the tick", () => {
     "y",
     "hp",
     "maxHp",
+    "level",
     "ack",
   ]);
   expect(Number(p.x.toFixed(2))).toBe(p.x);
@@ -221,52 +223,6 @@ test("a character's score starts from what was saved", () => {
   const world = createWorld(room);
   world.add({ ...aria, score: 7 });
   expect(world.get(1).score).toBe(7);
-});
-
-test("every tile walked earns a point, measured on the server", () => {
-  const world = createWorld(hall);
-  world.add(aria);
-  world.setInput(1, hold(1, { right: true }));
-
-  steps(world, 3);
-  expect(world.get(1).score).toBe(0); // 30 px
-  steps(world, 1);
-  expect(world.get(1).score).toBe(1); // 40 px is one tile
-  steps(world, 8);
-  expect(world.get(1).score).toBe(3);
-});
-
-test("walking into a wall earns nothing", () => {
-  const world = createWorld(room);
-  world.add(aria);
-  world.setInput(1, hold(1, { right: true }));
-  steps(world, 18); // reaches the right wall, about three tiles away
-  const atTheWall = world.get(1).score;
-  expect(atTheWall).toBe(3);
-
-  for (let seq = 2; seq <= 6; seq++) {
-    world.setInput(1, hold(seq, { right: true }));
-    steps(world, 5); // keep pushing
-  }
-
-  expect(world.get(1).score).toBe(atTheWall);
-});
-
-test("re-adding a player keeps the score earned so far", () => {
-  const world = createWorld(hall);
-  world.add(aria);
-  world.setInput(1, hold(1, { right: true }));
-  steps(world, 4);
-
-  world.add({ ...aria, score: 0 }); // a new connection, with the character as it was saved
-
-  expect(world.get(1).score).toBe(1);
-});
-
-test("the score is not part of the snapshot", () => {
-  const world = createWorld(room);
-  world.add({ ...aria, score: 7 });
-  expect(Object.keys(world.snapshot().players[0])).not.toContain("score");
 });
 
 const loot = [
@@ -313,4 +269,146 @@ test("an unknown item, or a player not in the world, gets 'gone'", () => {
 
 test("a world without loot has no items", () => {
   expect(createWorld(room).snapshot().items).toEqual([]);
+});
+
+const LEVELS = [
+  { level: 1, xpRequired: 0, maxHp: 100 },
+  { level: 2, xpRequired: 50, maxHp: 120 },
+];
+const dummy = {
+  name: "Dummy",
+  maxHp: 30,
+  damage: 8,
+  xp: 60,
+  attackRange: 40,
+  cooldownMs: 1000,
+  respawnSeconds: 1,
+};
+const ogre = { ...dummy, name: "Ogre", damage: 500 };
+// Aria stands at (100, 100). A monster in column 3 stands at (140, 100), 40 px away.
+const arena = (types, col = 3) =>
+  createWorld(room, {
+    monsters: { types, spawns: [{ type: Object.keys(types)[0], col, row: 2 }] },
+    levels: LEVELS,
+  });
+
+test("monsters appear in the snapshot with their health and facing", () => {
+  const world = arena({ dummy });
+  expect(world.snapshot().monsters).toEqual([
+    {
+      id: 1,
+      type: "dummy",
+      x: 140,
+      y: 100,
+      hp: 30,
+      maxHp: 30,
+      facing: -1,
+      attacking: false,
+    },
+  ]);
+});
+
+test("an attack hits the nearest monster within reach, for the player's damage", () => {
+  const world = arena({ dummy });
+  world.add(aria);
+  expect(world.attack(1)).toEqual({ ok: true, monster: 1, killed: false });
+  expect(world.snapshot().monsters[0].hp).toBe(20);
+});
+
+test("attacks wait for the cooldown, measured in world time", () => {
+  const world = arena({ dummy });
+  world.add(aria);
+  world.attack(1);
+  expect(world.attack(1)).toEqual({ ok: false, reason: "cooldown" });
+  steps(world, 15); // 750 ms of world time
+  expect(world.attack(1)).toEqual({ ok: false, reason: "cooldown" });
+  steps(world, 1); // 800 ms
+  expect(world.attack(1).ok).toBe(true);
+});
+
+test("with nothing in reach the attack is refused, and the cooldown is not used", () => {
+  const world = arena({ dummy }, 5); // 120 px away
+  world.add(aria);
+  expect(world.attack(1)).toEqual({ ok: false, reason: "no_target" });
+  expect(world.attack(1)).toEqual({ ok: false, reason: "no_target" }); // not "cooldown"
+});
+
+test("a kill gives XP and score, can level up and heal, and the monster comes back later", () => {
+  const world = arena({ dummy });
+  world.add(aria);
+  world.attack(1);
+  steps(world, 16);
+  world.attack(1);
+  steps(world, 16);
+
+  expect(world.attack(1)).toEqual({
+    ok: true,
+    monster: 1,
+    killed: true,
+    xp: 60,
+    level: 2,
+    leveledUp: true,
+  });
+  expect(world.snapshot().monsters).toEqual([]);
+  expect(player(world, 1)).toMatchObject({ level: 2, hp: 120, maxHp: 120 }); // healed to full
+  expect(world.get(1)).toMatchObject({ level: 2, xp: 60, score: 60 });
+
+  steps(world, 20); // one second later
+  expect(world.snapshot().monsters[0]).toMatchObject({ hp: 30 });
+});
+
+test("a monster strikes a player within reach on its own cooldown, facing them", () => {
+  const world = arena({ dummy });
+  world.add(aria);
+
+  world.step();
+  expect(player(world, 1).hp).toBe(92);
+  expect(world.snapshot().monsters[0]).toMatchObject({
+    facing: -1,
+    attacking: true,
+  });
+
+  steps(world, 8);
+  expect(world.snapshot().monsters[0].attacking).toBe(false);
+  steps(world, 11); // 1000 ms after the first strike, less one tick
+  expect(player(world, 1).hp).toBe(92);
+  world.step();
+  expect(player(world, 1).hp).toBe(84);
+});
+
+test("a player who dies returns to the spawn point with full health, keeping level and XP", () => {
+  const world = arena({ ogre });
+  world.add({ ...aria, level: 2, xp: 60, hp: 120 });
+
+  const events = world.step();
+
+  expect(events).toEqual([{ type: "died", id: 1, by: "Ogre" }]);
+  expect(player(world, 1)).toMatchObject({ x: 60, y: 60, hp: 120, level: 2 });
+  expect(world.get(1)).toMatchObject({ level: 2, xp: 60 });
+});
+
+test("a saved level and XP come back, with that level's health", () => {
+  const world = arena({ dummy }, 5);
+  world.add({ ...aria, level: 2, xp: 60, hp: 120 });
+  expect(player(world, 1)).toMatchObject({ level: 2, hp: 120, maxHp: 120 });
+  expect(world.get(1)).toMatchObject({ level: 2, xp: 60 });
+});
+
+test("re-adding a player keeps the progress made so far", () => {
+  const world = arena({ dummy });
+  world.add(aria);
+  for (let i = 0; i < 3; i++) {
+    world.attack(1);
+    steps(world, 16);
+  }
+  world.add(aria); // a new connection, with the character as it was saved
+  expect(world.get(1)).toMatchObject({ level: 2, xp: 60, score: 60 });
+});
+
+test("walking no longer earns score", () => {
+  const world = createWorld(hall);
+  world.add(aria);
+  world.setInput(1, hold(1, { right: true }));
+  steps(world, 12);
+  expect(world.get(1).score).toBe(0);
 });

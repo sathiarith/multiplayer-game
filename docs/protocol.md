@@ -35,26 +35,30 @@ does not exist.
 
 ## Events
 
-| Event             | Direction        | Payload                                                          | Validated by                                                                                |
-| ----------------- | ---------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `input`           | client to server | `{ seq, up, down, left, right }`                                 | The server (`parseInput` in `server/world.js`)                                              |
-| `welcome`         | server to client | `{ character, you, tickRate, inventory, catalog }`               | The client trusts the server                                                                |
-| `snapshot`        | server to client | `{ tick, players: [...], items: [{ id, item, x, y }] }`          | The client trusts the server                                                                |
-| `replaced`        | server to client | none                                                             | The client trusts the server                                                                |
-| `kicked`          | server to client | `{ reason }`                                                     | The client trusts the server                                                                |
-| `chat`            | client to server | `{ text }`                                                       | The server (`parseChat` in `server/chat.js`)                                                |
-| `chat`            | server to client | `{ id, from: { id, name }, text, at }`                           | The client trusts the server, and escapes the text when showing it                          |
-| `chat_rejected`   | server to client | `{ reason }`                                                     | The client trusts the server                                                                |
-| `pickup`          | client to server | `{ id }`                                                         | The server (`parsePickup` in `server/loot.js`, range and availability in `server/world.js`) |
-| `inventory`       | server to client | `{ items: [{ code, name, description, quantity }] }`             | The client trusts the server                                                                |
-| `pickup_rejected` | server to client | `{ reason }`                                                     | The client trusts the server                                                                |
-| `trade_offer`     | client to server | `{ to, give: [{ code, quantity }], want: [{ code, quantity }] }` | The server (`parseOffer` in `server/offers.js`)                                             |
-| `trade_accept`    | client to server | `{ id }`                                                         | The server: only the receiver                                                               |
-| `trade_decline`   | client to server | `{ id }`                                                         | The server: only the receiver                                                               |
-| `trade_cancel`    | client to server | `{ id }`                                                         | The server: only the sender                                                                 |
-| `trade_offered`   | server to client | `{ id, from: { id, name }, give, want, expiresAt }`              | The client trusts the server                                                                |
-| `trade_sent`      | server to client | `{ id, to: { id, name }, give, want, expiresAt }`                | The client trusts the server                                                                |
-| `trade_result`    | server to client | `{ id, ok, reason }`                                             | The client trusts the server                                                                |
+| Event             | Direction        | Payload                                                                                                                                      | Validated by                                                                                 |
+| ----------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `input`           | client to server | `{ seq, up, down, left, right }`                                                                                                             | The server (`parseInput` in `server/world.js`)                                               |
+| `welcome`         | server to client | `{ character, you, tickRate, inventory, catalog, levels }`                                                                                   | The client trusts the server                                                                 |
+| `snapshot`        | server to client | `{ tick, players: [{ id, name, x, y, hp, maxHp, level, ack }], items: [...], monsters: [{ id, type, x, y, hp, maxHp, facing, attacking }] }` | The client trusts the server                                                                 |
+| `replaced`        | server to client | none                                                                                                                                         | The client trusts the server                                                                 |
+| `kicked`          | server to client | `{ reason }`                                                                                                                                 | The client trusts the server                                                                 |
+| `chat`            | client to server | `{ text }`                                                                                                                                   | The server (`parseChat` in `server/chat.js`)                                                 |
+| `chat`            | server to client | `{ id, from: { id, name }, text, at }`                                                                                                       | The client trusts the server, and escapes the text when showing it                           |
+| `chat_rejected`   | server to client | `{ reason }`                                                                                                                                 | The client trusts the server                                                                 |
+| `pickup`          | client to server | `{ id }`                                                                                                                                     | The server (`parsePickup` in `server/loot.js`, range and availability in `server/world.js`)  |
+| `inventory`       | server to client | `{ items: [{ code, name, description, quantity }] }`                                                                                         | The client trusts the server                                                                 |
+| `pickup_rejected` | server to client | `{ reason }`                                                                                                                                 | The client trusts the server                                                                 |
+| `trade_offer`     | client to server | `{ to, give: [{ code, quantity }], want: [{ code, quantity }] }`                                                                             | The server (`parseOffer` in `server/offers.js`)                                              |
+| `trade_accept`    | client to server | `{ id }`                                                                                                                                     | The server: only the receiver                                                                |
+| `trade_decline`   | client to server | `{ id }`                                                                                                                                     | The server: only the receiver                                                                |
+| `trade_cancel`    | client to server | `{ id }`                                                                                                                                     | The server: only the sender                                                                  |
+| `trade_offered`   | server to client | `{ id, from: { id, name }, give, want, expiresAt }`                                                                                          | The client trusts the server                                                                 |
+| `trade_sent`      | server to client | `{ id, to: { id, name }, give, want, expiresAt }`                                                                                            | The client trusts the server                                                                 |
+| `trade_result`    | server to client | `{ id, ok, reason }`                                                                                                                         | The client trusts the server                                                                 |
+| `attack`          | client to server | none, or `{}`                                                                                                                                | The server (`parseAttack` in `server/monsters.js`; target and cooldown in `server/world.js`) |
+| `attack_rejected` | server to client | `{ reason }`                                                                                                                                 | The client trusts the server                                                                 |
+| `progress`        | server to client | `{ level, xp, leveledUp }`                                                                                                                   | The client trusts the server                                                                 |
+| `died`            | server to client | `{ by }`                                                                                                                                     | The client trusts the server                                                                 |
 
 ### `input`
 
@@ -73,6 +77,7 @@ Sent once after the handshake. `character` is the saved character, `you` is
 its id, and `tickRate` is the server's steps per second.
 `inventory` is what the character carries, in the same shape as the `inventory` event’s `items`.
 `catalog` lists every item that exists, as `[{ code, name }]`.
+`levels` is the XP table: `[{ level, xpRequired, maxHp }]`.
 
 ### `snapshot`
 
@@ -81,6 +86,7 @@ disappears from the list, so there are no separate events for that.
 `ack` is the last input `seq` the server applied for that player. The client
 uses it to replay the inputs the server has not seen yet.
 `items` lists the items lying on the map. A picked-up item is missing until it comes back.
+`monsters` lists the living monsters. `facing` is `-1` (left) or `1` (right), and `attacking` is true for a moment after a strike.
 
 ### `replaced`
 
@@ -150,6 +156,19 @@ such offer for you: answered, expired, withdrawn, or not yours), `declined`,
 `cancelled`, and `error`. None of these is a violation, but a malformed trade
 message is.
 
+### Combat
+
+`attack` names no target. The server checks the attack cooldown, then hits
+the nearest monster within reach. A refusal comes back as `attack_rejected`,
+with `reason` `cooldown` or `no_target`, and is not a violation; a miss does
+not use up the cooldown. A kill sends `progress` to the attacker, with the new
+level and XP. The XP earned is also the leaderboard score.
+
+Monsters strike the nearest player within their reach on their own cooldown.
+A player whose health reaches zero is sent `died` (with the monster's name)
+and returns to the spawn point with full health, keeping level, XP, score and
+items. Cooldowns use world time, counted in game ticks.
+
 ## Limits
 
 | Limit                        | Value                                      |
@@ -171,6 +190,8 @@ message is.
 | Trade offer lifetime         | 30 seconds                                 |
 | Open offers per player       | 3                                          |
 | Items per side of a trade    | 4                                          |
+| Attack reach                 | 48 pixels                                  |
+| Attack cooldown              | 800 milliseconds                           |
 
 - **Message size:** a message over the limit closes the connection at once.
 - **Rate:** every message costs one token, and tokens come back at the

@@ -5,6 +5,7 @@ import { createUser } from "./users.js";
 import { createCharacter, listCharacters } from "./characters.js";
 import { createWorld } from "./world.js";
 import { createPersistence } from "./persistence.js";
+import { loadLevels } from "./levels.js";
 
 const hall = buildLevel({
   tileSize: 40,
@@ -143,10 +144,37 @@ test("start saves on a timer, and stop ends it", () => {
   expect(saved().x).toBeCloseTo(130); // no more saves
 });
 
-test("the score is saved with the position", () => {
-  move(8); // two tiles
-  persistence.save(aria.id);
-  expect(saved().score).toBe(2);
+test("level, XP and score are saved with the position", () => {
+  // A one-hit monster next to Aria (she stands at (100, 60), it at (140, 60)) that never strikes.
+  const fighting = createWorld(hall, {
+    levels: loadLevels(db),
+    monsters: {
+      types: {
+        dummy: {
+          name: "Dummy",
+          maxHp: 10,
+          damage: 1,
+          xp: 60,
+          attackRange: 1,
+          cooldownMs: 99999,
+          respawnSeconds: 99,
+        },
+      },
+      spawns: [{ type: "dummy", col: 3, row: 1 }],
+    },
+  });
+  fighting.add(aria);
+  expect(fighting.attack(aria.id)).toMatchObject({ killed: true, level: 2 });
+
+  const saver = createPersistence({
+    db,
+    world: fighting,
+    ownerOf: (id) => owners.get(id),
+    logger,
+  });
+  saver.save(aria.id);
+
+  expect(saved()).toMatchObject({ level: 2, xp: 60, score: 60 });
 });
 
 test("onSaved is told about every write, and only about writes", () => {
@@ -167,7 +195,7 @@ test("onSaved is told about every write, and only about writes", () => {
   expect(onSaved).toHaveBeenCalledTimes(1);
   expect(onSaved).toHaveBeenCalledWith(
     aria.id,
-    expect.objectContaining({ score: 1 }),
+    expect.objectContaining({ x: expect.any(Number) }),
   );
 });
 
@@ -184,7 +212,7 @@ test("a failing onSaved is logged and does not stop the save", async () => {
 
   expect(watching.save(aria.id)).toBe(true);
   await vi.waitFor(() => expect(logger.error).toHaveBeenCalledTimes(1));
-  expect(saved().score).toBe(1);
+  expect(saved().x).toBeCloseTo(140);
 });
 
 test("an onSaved that throws at once is logged too", () => {

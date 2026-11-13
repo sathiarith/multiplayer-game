@@ -75,6 +75,12 @@ test("the limits in the document match the code", () => {
   expect(row("Items per side of a trade")).toContain(
     String(PROTOCOL.trade.maxLines),
   );
+  expect(row("Attack reach")).toContain(
+    `${PROTOCOL.combat.attackRange} pixels`,
+  );
+  expect(row("Attack cooldown")).toContain(
+    `${PROTOCOL.combat.attackCooldownMs} milliseconds`,
+  );
 });
 
 test("every chat rejection reason is documented", () => {
@@ -97,5 +103,10 @@ test("the stack limit in the protocol is the one the code enforces", () => {
 
 test("every trade result reason is documented", () => {
   for (const reason of PROTOCOL.tradeReasons)
+    expect(doc, reason).toContain(`\`${reason}\``);
+});
+
+test("every attack rejection reason is documented", () => {
+  for (const reason of PROTOCOL.attackRejections)
     expect(doc, reason).toContain(`\`${reason}\``);
 });

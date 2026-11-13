@@ -12,6 +12,7 @@ export async function startRealtime({
   logger,
   appOptions = {},
   makeLeaderboard,
+  monsters,
 } = {}) {
   const { app, db, leaderboard } = createTestApp({
     ...appOptions,
@@ -27,6 +28,7 @@ export async function startRealtime({
     saveEveryMs,
     logger,
     leaderboard,
+    monsters,
   });
   await new Promise((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
   const url = `http://127.0.0.1:${httpServer.address().port}`;
