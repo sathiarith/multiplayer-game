@@ -2,6 +2,7 @@ import { test, expect, beforeEach, afterEach, vi } from "vitest";
 import { startRealtime } from "./realtime-test-helpers.js";
 import { TEST_ORIGIN, createLogCapture } from "./test-helpers.js";
 import { addItem } from "./inventory.js";
+import { MONSTERS } from "./monsters.js";
 
 let rt;
 beforeEach(async () => {
@@ -216,6 +217,7 @@ test("snapshots list every connected player with their position", async () => {
     y: 60,
     hp: 100,
     maxHp: 100,
+    level: 1,
     ack: 0,
   });
 });
@@ -531,24 +533,115 @@ test("a failed save is logged, and the game carries on", async () => {
   });
 });
 
-test("tiles walked become a score that is saved and shown on the leaderboard", async () => {
+// One goblin a tile from the spawn point, so tests can fight without walking.
+const NEAR_GOBLIN = {
+  types: MONSTERS.types,
+  spawns: [{ type: "goblin", col: 3, row: 1 }],
+};
+
+// Attacks every 50 ms until the goblin dies; resolves with the `progress` message.
+async function killGoblin(socket) {
+  const progress = new Promise((resolve) => socket.once("progress", resolve));
+  const timer = setInterval(() => socket.emit("attack"), 50);
+  try {
+    return await progress;
+  } finally {
+    clearInterval(timer);
+  }
+}
+
+test("the welcome carries the XP table", async () => {
+  const alice = await rt.player("alice", "Aria");
+  const { welcome } = await rt.open(asPlayer(alice));
+  expect(welcome.levels[0]).toEqual({ level: 1, xpRequired: 0, maxHp: 100 });
+});
+
+test("goblins appear in snapshots, far from the spawn point by default", async () => {
   const alice = await rt.player("alice", "Aria");
   const { socket } = await rt.open(asPlayer(alice));
+  const snap = await snapshotWhere(socket, (s) => s.monsters?.length > 0);
+  expect(snap.monsters[0]).toMatchObject({ type: "goblin", hp: 40, maxHp: 40 });
+  expect(snap.monsters.every((m) => m.x > 300)).toBe(true);
+});
 
-  socket.emit("input", hold(1, { right: true }));
-  await snapshotWhere(socket, (s) => me(s, alice.characterId).x >= 150); // more than a tile from x = 100
-  socket.disconnect();
+test("an attack with nothing in reach is refused without penalty", async () => {
+  const alice = await rt.player("alice", "Aria");
+  const { socket } = await rt.open(asPlayer(alice));
+  const rejected = hear(socket, "attack_rejected");
 
-  await vi.waitFor(() =>
-    expect(savedState(rt, alice.characterId).score).toBeGreaterThanOrEqual(1),
-  );
-  const res = await fetch(`${rt.url}/api/leaderboard`, {
-    headers: { Cookie: alice.cookie },
+  socket.emit("attack");
+
+  await vi.waitFor(() => expect(rejected).toEqual([{ reason: "no_target" }]));
+  expect(socket.connected).toBe(true);
+});
+
+test("killing a goblin gives XP, which is the score, saved and shown on the leaderboard", async () => {
+  await withServer({ monsters: NEAR_GOBLIN }, async (srv) => {
+    const alice = await srv.player("alice", "Aria");
+    const { socket } = await srv.open(asPlayer(alice));
+
+    expect(await killGoblin(socket)).toEqual({
+      level: 1,
+      xp: 25,
+      leveledUp: false,
+    });
+    socket.disconnect(); // leaving saves the character
+
+    await vi.waitFor(() =>
+      expect(savedState(srv, alice.characterId)).toMatchObject({ score: 25 }),
+    );
+    const row = srv.db
+      .prepare("SELECT level, xp FROM characters WHERE id = ?")
+      .get(alice.characterId);
+    expect(row).toEqual({ level: 1, xp: 25 });
+    const res = await fetch(`${srv.url}/api/leaderboard`, {
+      headers: { Cookie: alice.cookie },
+    });
+    expect(await res.json()).toEqual([
+      { rank: 1, name: "Aria", level: 1, score: 25 },
+    ]);
   });
-  const board = await res.json();
-  expect(board).toHaveLength(1);
-  expect(board[0]).toMatchObject({ rank: 1, name: "Aria" });
-  expect(board[0].score).toBeGreaterThanOrEqual(1);
+});
+
+test("a player who dies is told, and returns to the spawn point with full health", async () => {
+  const brute = {
+    name: "Brute",
+    maxHp: 999,
+    damage: 999,
+    xp: 1,
+    attackRange: 44,
+    cooldownMs: 100,
+    respawnSeconds: 1,
+  };
+  const monsters = {
+    types: { brute },
+    spawns: [{ type: "brute", col: 3, row: 1 }],
+  };
+  await withServer({ monsters }, async (srv) => {
+    const alice = await srv.player("alice", "Aria");
+    const { socket } = await srv.open(asPlayer(alice));
+    const died = new Promise((resolve) => socket.once("died", resolve));
+
+    expect(await died).toEqual({ by: "Brute" });
+    const snap = await snapshotWhere(socket, () => true);
+    expect(me(snap, alice.characterId)).toMatchObject({
+      hp: 100,
+      maxHp: 100,
+      level: 1,
+    });
+  });
+});
+
+test("a malformed attack is a violation", async () => {
+  await withServer({ guard: { burst: 100, maxViolations: 3 } }, async (srv) => {
+    const alice = await srv.player("alice", "Aria");
+    const { socket } = await srv.open(asPlayer(alice));
+    const { kicked } = watch(socket);
+
+    for (let i = 0; i < 5; i++) socket.emit("attack", { target: 1 });
+
+    expect((await kicked).reason).toBe("too_many_messages");
+  });
 });
 
 const PASSWORD = "correct-horse-battery";

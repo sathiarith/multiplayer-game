@@ -76,7 +76,8 @@ test("logging out in one tab disconnects the game in another", async ({
   await expect(page.getByText(/disconnected from the game/i)).toBeVisible();
 });
 
-test("walking earns points that appear on the leaderboard", async ({
+// Walking no longer scores: Story 7.4 Part 3 replaces this with a fight.
+test.fixme("walking earns points that appear on the leaderboard", async ({
   page,
 }) => {
   const { name } = await startPlaying(page);

@@ -1,6 +1,7 @@
 import { TICK_RATE } from "../shared/prediction.js";
 import { PICKUP_RANGE } from "../shared/items.js";
 import { MAX_TRADE_LINES, TRADE_RANGE } from "../shared/trade.js";
+import { ATTACK_COOLDOWN_MS, ATTACK_RANGE } from "../shared/combat.js";
 
 // The rules of the game connection, in one place. `docs/protocol.md` describes
 // them, and server/protocol.test.js fails if the two disagree.
@@ -58,4 +59,6 @@ export const PROTOCOL = {
     "cancelled",
     "error",
   ],
+  combat: { attackRange: ATTACK_RANGE, attackCooldownMs: ATTACK_COOLDOWN_MS },
+  attackRejections: ["cooldown", "no_target"],
 };

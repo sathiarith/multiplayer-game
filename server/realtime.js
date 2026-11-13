@@ -14,6 +14,8 @@ import { LOOT, parsePickup } from "./loot.js";
 import { addItem, listInventory, listItems } from "./inventory.js";
 import { createOffers, parseOffer, parseTradeId } from "./offers.js";
 import { executeTrade } from "./trade.js";
+import { MONSTERS, parseAttack } from "./monsters.js";
+import { loadLevels } from "./levels.js";
 
 // Socket.IO shows a refusal to the client as `connect_error`, carrying err.data.
 const refuse = (code, message) =>
@@ -31,6 +33,7 @@ export function attachRealtime(
     saveEveryMs = PROTOCOL.saveEveryMs,
     leaderboard, // optional: told about every score that is saved
     loot = LOOT.spawns, // where items lie; tests may pass their own
+    monsters = MONSTERS, // monster types and spots; tests may pass their own
     adapter, // optional: a Socket.IO adapter (the Redis one, for the experiment). Undefined means in memory.
     guard = {}, // tests pass smaller limits
   },
@@ -60,10 +63,14 @@ export function attachRealtime(
   // socket.request.session is the same session the REST API uses.
   io.engine.use(app.locals.sessionMiddleware);
 
+  const levels = loadLevels(db); // the XP table, checked once at startup
   const world = createWorld(level, {
     spawns: loot,
     respawnTicks: PROTOCOL.pickup.respawnSeconds * TICK_RATE,
+    monsters,
+    levels,
   });
+
   const online = new Map(); // characterId -> the socket currently playing it
 
   // Trade offers waiting for an answer. In memory: a restart cancels them,
@@ -112,7 +119,10 @@ export function attachRealtime(
   const timer = setInterval(() => {
     if (world.size === 0) return; // nobody is playing
     try {
-      world.step();
+      for (const event of world.step()) {
+        if (event.type === "died")
+          online.get(event.id)?.emit("died", { by: event.by });
+      }
       io.to("world").emit("snapshot", world.snapshot());
     } catch (err) {
       logger.error({ err }, "game tick failed");
@@ -180,6 +190,7 @@ export function attachRealtime(
       tickRate: TICK_RATE,
       inventory,
       catalog,
+      levels,
     });
 
     // Every incoming message passes through here, including events we have no
@@ -361,6 +372,24 @@ export function attachRealtime(
       return true;
     }
 
+    // An attack is a bare request: the server picks the target and checks the cooldown.
+    function handleAttack(raw) {
+      if (!parseAttack(raw)) return false; // nonsense: a violation
+      const result = world.attack(character.id);
+      if (!result.ok) {
+        socket.emit("attack_rejected", { reason: result.reason });
+        return true;
+      }
+      if (result.killed) {
+        socket.emit("progress", {
+          level: result.level,
+          xp: result.xp,
+          leveledUp: result.leveledUp,
+        });
+      }
+      return true;
+    }
+
     // Every event a client may send, and what handles it.
     const handlers = {
       input: handleInput,
@@ -372,6 +401,7 @@ export function attachRealtime(
         handleTradeAnswer(raw, { by: "to", reason: "declined" }),
       trade_cancel: (raw) =>
         handleTradeAnswer(raw, { by: "from", reason: "cancelled" }),
+      attack: handleAttack,
     };
 
     function kick() {

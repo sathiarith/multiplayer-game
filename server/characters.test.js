@@ -119,3 +119,33 @@ test("saveCharacterState saves the score, and leaves it alone when none is given
   saveCharacterState(db, alice.id, c.id, { x: 6, y: 6, hp: 80 }); // no score given
   expect(listCharacters(db, alice.id)[0]).toMatchObject({ hp: 80, score: 12 });
 });
+
+test("a new character starts at level 1 with no XP", () => {
+  expect(createCharacter(db, alice.id, "Aria")).toMatchObject({
+    level: 1,
+    xp: 0,
+  });
+});
+
+test("saveCharacterState saves level and XP, and leaves them alone when not given", () => {
+  const c = createCharacter(db, alice.id, "Aria");
+  saveCharacterState(db, alice.id, c.id, {
+    x: 5,
+    y: 5,
+    hp: 120,
+    level: 2,
+    xp: 60,
+  });
+  expect(listCharacters(db, alice.id)[0]).toMatchObject({
+    level: 2,
+    xp: 60,
+    hp: 120,
+  });
+
+  saveCharacterState(db, alice.id, c.id, { x: 6, y: 6, hp: 110 });
+  expect(listCharacters(db, alice.id)[0]).toMatchObject({
+    level: 2,
+    xp: 60,
+    hp: 110,
+  });
+});

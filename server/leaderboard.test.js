@@ -8,6 +8,7 @@ import { createLeaderboard, TOP_N } from "./leaderboard.js";
 import { probeRedis } from "./redis-test-helpers.js";
 import { startRealtime } from "./realtime-test-helpers.js";
 import { createTestApp, loggedInAgent } from "./test-helpers.js";
+import { MONSTERS } from "./monsters.js";
 
 const redis = await probeRedis();
 afterAll(async () => {
@@ -227,35 +228,39 @@ describe.skipIf(!redis)("the leaderboard in Redis", () => {
     expect(names(await board.top())).toEqual(["Aria"]);
   });
 
-  test("a score saved by the game server reaches the Redis board and the endpoint", async () => {
-    const rt = await startRealtime({ makeLeaderboard: make });
+  test("a score earned by the game server reaches the Redis board and the endpoint", async () => {
+    const rt = await startRealtime({
+      makeLeaderboard: make,
+      monsters: {
+        types: MONSTERS.types,
+        spawns: [{ type: "goblin", col: 3, row: 1 }],
+      },
+    });
     try {
       const alice = await rt.player("alice", "Aria");
       const { socket } = await rt.open({
         cookie: alice.cookie,
         auth: { characterId: alice.characterId },
       });
-      socket.emit("input", {
-        seq: 1,
-        up: false,
-        down: false,
-        left: false,
-        right: true,
-      });
-      await new Promise((resolve) => setTimeout(resolve, 300)); // walk for a moment
+      const progress = new Promise((resolve) =>
+        socket.once("progress", resolve),
+      );
+      const timer = setInterval(() => socket.emit("attack"), 50);
+      await progress;
+      clearInterval(timer);
       socket.disconnect(); // leaving saves the character, and announces the score
 
       await vi.waitFor(async () => {
-        const score = await redis.zScore(scores, String(alice.characterId));
-        expect(score).toBeGreaterThanOrEqual(1);
+        expect(await redis.zScore(scores, String(alice.characterId))).toBe(25);
       });
-
       const res = await fetch(`${rt.url}/api/leaderboard`, {
         headers: { Cookie: alice.cookie },
       });
-      const board = await res.json();
-      expect(board[0]).toMatchObject({ rank: 1, name: "Aria" });
-      expect(board[0].score).toBeGreaterThanOrEqual(1);
+      expect((await res.json())[0]).toMatchObject({
+        rank: 1,
+        name: "Aria",
+        score: 25,
+      });
     } finally {
       await rt.close();
     }

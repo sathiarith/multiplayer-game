@@ -309,7 +309,7 @@ components:
           default: warrior
     Character:
       type: object
-      required: [id, name, class, level, hp, score, x, y]
+      required: [id, name, class, level, hp, score, xp, x, y]
       properties:
         id:
           type: integer
@@ -325,6 +325,9 @@ components:
         score:
           type: integer
           description: One point for every tile walked.
+        xp:
+          type: integer
+          description: Experience earned in combat.
         x:
           type: number
         y:

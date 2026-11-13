@@ -13,7 +13,8 @@ export function createPersistence({
   intervalMs = SAVE_EVERY_MS,
 }) {
   const lastWritten = new Map(); // character id -> what was last written, as text
-  const fingerprint = (s) => `${s.x}|${s.y}|${s.hp}|${s.score}`;
+  const fingerprint = (s) =>
+    `${s.x}|${s.y}|${s.hp}|${s.score}|${s.level}|${s.xp}`;
   let timer = null;
 
   // Tells the listener about a write. Its failure is logged and never stops a save.

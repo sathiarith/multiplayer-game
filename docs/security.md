@@ -154,6 +154,8 @@ Handled:
 - Inventory changes are written to the database at once, inside a transaction, before the item leaves the map. Two players grabbing one item cannot both get it (tested). A stack is capped at 9999 by the code and by a database `CHECK`.
 - A trade runs in one database transaction, and every quantity is checked inside it at the moment of the trade, never trusted from when the offer was made. Tests offer the same coins to two players and accept both at once, and force a failure halfway through a trade; in both cases no item is created or lost.
 
+- Combat is decided by the server. An attack names no target: the server chooses the nearest monster within reach and enforces the cooldown in world time. Monsters, damage, death and XP all run on the server, and the client only displays them.
+
 Accepted trade-offs:
 
 - Registration says "username taken", so usernames can be confirmed.
