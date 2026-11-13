@@ -76,24 +76,6 @@ test("logging out in one tab disconnects the game in another", async ({
   await expect(page.getByText(/disconnected from the game/i)).toBeVisible();
 });
 
-// Walking no longer scores: Story 7.4 Part 3 replaces this with a fight.
-test.fixme("walking earns points that appear on the leaderboard", async ({
-  page,
-}) => {
-  const { name } = await startPlaying(page);
-  await waitForPlayers(page, 1);
-
-  await hold(page, "ArrowRight", 1000); // about five tiles
-  await page.getByRole("link", { name: "Back to characters" }).click(); // leaving saves the character
-
-  await expect
-    .poll(async () => {
-      const board = await (await page.request.get("/api/leaderboard")).json();
-      return board.find((entry) => entry.name === name)?.score ?? 0;
-    })
-    .toBeGreaterThanOrEqual(3);
-});
-
 test("logging in again in another tab ends the game in the first", async ({
   context,
   page,

@@ -17,6 +17,9 @@ import { io as defaultIo } from "socket.io-client";
 //   catalog() -> [{ code, name }]
 //   sendTradeOffer({ to, give, want }), sendTradeAccept(id), sendTradeDecline(id), sendTradeCancel(id)
 //   onTradeOffered(listener), onTradeSent(listener), onTradeResult(listener) -> unsubscribe
+//   levels() -> [{ level, xpRequired, maxHp }]
+//   sendAttack()
+//   onProgress(listener), onDied(listener), onAttackRejected(listener) -> unsubscribe
 export function connectToGame({ characterId, onChange, io = defaultIo }) {
   // No URL: connect to the page's own origin (the Vite proxy in development).
   const socket = io({ transports: ["websocket"], auth: { characterId } });
@@ -30,6 +33,12 @@ export function connectToGame({ characterId, onChange, io = defaultIo }) {
     sent: new Set(),
     result: new Set(),
   };
+  const combatListeners = {
+    progress: new Set(),
+    died: new Set(),
+    rejected: new Set(),
+  };
+  let lastLevels = [];
   let lastCatalog = [];
 
   const deliver = (listeners) => (payload) => {
@@ -62,8 +71,9 @@ export function connectToGame({ characterId, onChange, io = defaultIo }) {
 
   report({ status: "connecting" });
 
-  socket.on("welcome", ({ character, inventory, catalog }) => {
+  socket.on("welcome", ({ character, inventory, catalog, levels }) => {
     if (catalog) lastCatalog = catalog;
+    if (levels) lastLevels = levels;
     if (inventory) publishInventory(inventory);
     report({ status: "connected", character });
   });
@@ -87,7 +97,6 @@ export function connectToGame({ characterId, onChange, io = defaultIo }) {
     if (closed) return;
     for (const listener of snapshotListeners) listener(snapshot);
   });
-
   socket.on("chat", (message) => {
     if (closed) return;
     for (const listener of chatListeners) listener(message);
@@ -99,6 +108,9 @@ export function connectToGame({ characterId, onChange, io = defaultIo }) {
   socket.on("trade_offered", deliver(tradeListeners.offered));
   socket.on("trade_sent", deliver(tradeListeners.sent));
   socket.on("trade_result", deliver(tradeListeners.result));
+  socket.on("progress", deliver(combatListeners.progress));
+  socket.on("died", deliver(combatListeners.died));
+  socket.on("attack_rejected", deliver(combatListeners.rejected));
 
   return {
     // Sent "volatile": if the connection is not ready the message is dropped,
@@ -137,6 +149,7 @@ export function connectToGame({ characterId, onChange, io = defaultIo }) {
       inventoryListeners.clear();
       pickupRejectionListeners.clear();
       for (const listeners of Object.values(tradeListeners)) listeners.clear();
+      for (const listeners of Object.values(combatListeners)) listeners.clear();
     },
     sendPickup(id) {
       if (!closed) socket.volatile.emit("pickup", { id });
@@ -171,5 +184,16 @@ export function connectToGame({ characterId, onChange, io = defaultIo }) {
     onTradeOffered: subscribe(tradeListeners.offered),
     onTradeSent: subscribe(tradeListeners.sent),
     onTradeResult: subscribe(tradeListeners.result),
+    // The XP table from the welcome: [{ level, xpRequired, maxHp }].
+    levels: () => lastLevels,
+
+    // A bare request: the server picks the target and checks the cooldown.
+    sendAttack() {
+      if (!closed) socket.volatile.emit("attack");
+    },
+
+    onProgress: subscribe(combatListeners.progress),
+    onDied: subscribe(combatListeners.died),
+    onAttackRejected: subscribe(combatListeners.rejected),
   };
 }

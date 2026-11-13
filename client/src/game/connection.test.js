@@ -268,3 +268,30 @@ test("trade messages are sent volatile, with the right events", () => {
     ["trade_cancel", { id: "c" }],
   ]);
 });
+
+test("the XP table from the welcome is kept", () => {
+  const { connection, socket } = start();
+  const levels = [{ level: 1, xpRequired: 0, maxHp: 100 }];
+  socket.emit("welcome", { character: { id: 7 }, levels });
+  expect(connection.levels()).toEqual(levels);
+});
+
+test("an attack is a bare volatile request", () => {
+  const { connection, socket } = start();
+  connection.sendAttack();
+  expect(socket.volatile.emit).toHaveBeenCalledWith("attack");
+});
+
+test("combat messages reach their listeners", () => {
+  const { connection, socket } = start();
+  const seen = [];
+  connection.onProgress((p) => seen.push(`progress ${p.xp}`));
+  connection.onDied((d) => seen.push(`died ${d.by}`));
+  connection.onAttackRejected((r) => seen.push(`rejected ${r.reason}`));
+
+  socket.emit("progress", { level: 1, xp: 25, leveledUp: false });
+  socket.emit("died", { by: "Goblin" });
+  socket.emit("attack_rejected", { reason: "cooldown" });
+
+  expect(seen).toEqual(["progress 25", "died Goblin", "rejected cooldown"]);
+});

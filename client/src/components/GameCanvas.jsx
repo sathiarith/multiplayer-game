@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { createNetworkGame } from "../game/netGame.js";
-import { loadSheets, loadItemImages } from "../game/assets.js";
+import {
+  loadSheets,
+  loadItemImages,
+  loadMonsterImages,
+} from "../game/assets.js";
 import { level } from "../game/level.js";
 import Hud from "./Hud.jsx";
 import "./GameCanvas.css";
@@ -13,8 +17,11 @@ export default function GameCanvas({ character, connection }) {
   // Load the art once. A missing sheet becomes null and a placeholder is drawn.
   useEffect(() => {
     let current = true;
-    Promise.all([loadSheets(), loadItemImages()])
-      .then(([loaded, items]) => current && setSheets({ ...loaded, items }))
+    Promise.all([loadSheets(), loadItemImages(), loadMonsterImages()])
+      .then(
+        ([loaded, items, monsters]) =>
+          current && setSheets({ ...loaded, items, monsters }),
+      )
       .catch(() => current && setSheets({}));
     return () => {
       current = false;
@@ -36,8 +43,13 @@ export default function GameCanvas({ character, connection }) {
     game.start();
     // Development builds only: a read-only view for the end-to-end tests, because
     // a canvas cannot be read like the rest of the page. `vite build` removes it.
-    if (import.meta.env.DEV)
-      window.__game = { players: game.latestPlayers, items: game.latestItems };
+    if (import.meta.env.DEV) {
+      window.__game = {
+        players: game.latestPlayers,
+        items: game.latestItems,
+        monsters: game.latestMonsters,
+      };
+    }
     return () => {
       game.stop();
       if (import.meta.env.DEV) delete window.__game;

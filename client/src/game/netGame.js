@@ -20,6 +20,9 @@ const isTyping = (target) =>
   target?.isContentEditable ||
   ["INPUT", "TEXTAREA", "SELECT"].includes(target?.tagName);
 
+// Space on a button or link belongs to that control, not to the game.
+const isControl = (target) => ["BUTTON", "A"].includes(target?.tagName);
+
 // My own character is predicted in fixed steps (the same ones the server takes)
 // and corrected by the server. Everyone else is drawn slightly in the past,
 // blended between two snapshots. The server stays in charge of everything.
@@ -51,6 +54,8 @@ export function createNetworkGame({
   let lastHud = null;
   let latest = []; // the newest snapshot's players, for debugging and the end-to-end tests
   let groundItems = []; // items lying on the map, from the newest snapshot
+  let monsters = []; // the newest snapshot's monsters, with when each strike began
+  const strikeStarts = new Map(); // monster id -> time its current strike began
 
   // E picks up the nearest item within reach. The server checks again.
   function pickUpNearest() {
@@ -72,6 +77,11 @@ export function createNetworkGame({
   // Input: only record what is held. Nothing moves here.
   const onKeyDown = (e) => {
     if (isTyping(e.target)) return;
+    if (e.code === "Space" && !isControl(e.target)) {
+      e.preventDefault(); // stop the page scrolling
+      if (!e.repeat) connection.sendAttack(); // one request per press
+      return;
+    }
     if (e.code === "KeyE" && !e.repeat) pickUpNearest(); // one request per press, not per repeat
     keys.add(e.code);
     if (e.code.startsWith("Arrow")) e.preventDefault(); // stop the page scrolling
@@ -106,10 +116,25 @@ export function createNetworkGame({
     publishHud();
   }
 
-  function onSnapshot({ players, items = [] }) {
-    groundItems = items;
+  function onSnapshot({ players, items = [], monsters: foes = [] }) {
     latest = players;
-    buffer.push(env.now(), players);
+    groundItems = items;
+
+    // Note when each strike began, so its animation starts at the first frame.
+    const time = env.now();
+    monsters = foes.map((m) => {
+      const strikeStart = m.attacking
+        ? (strikeStarts.get(m.id) ?? time)
+        : undefined;
+      if (m.attacking) strikeStarts.set(m.id, strikeStart);
+      else strikeStarts.delete(m.id);
+      return { ...m, strikeStart };
+    });
+
+    // Other players are drawn from this buffer, a moment in the past.
+    buffer.push(time, players);
+
+    // The server's version of me corrects my prediction.
     const mine = players.find((p) => p.id === you);
     if (mine) {
       predictor.reconcile(mine);
@@ -153,6 +178,7 @@ export function createNetworkGame({
           x: p.x,
           y: p.y,
           hp: p.hp,
+          maxHp: p.maxHp,
           size: PLAYER_SIZE,
         },
         anim,
@@ -178,6 +204,7 @@ export function createNetworkGame({
           x: at.x,
           y: at.y,
           hp: state.hp,
+          maxHp: state.maxHp,
           size: state.size,
         },
         anim,
@@ -189,6 +216,8 @@ export function createNetworkGame({
       youId: you,
       showHitbox,
       groundItems,
+      monsters,
+      now,
     });
     if (running) frameId = env.raf(frame);
   }
@@ -196,6 +225,7 @@ export function createNetworkGame({
   return {
     latestPlayers: () => latest,
     latestItems: () => groundItems,
+    latestMonsters: () => monsters,
     start() {
       if (running) return; // never run two loops
       running = true;

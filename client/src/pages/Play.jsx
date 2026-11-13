@@ -8,6 +8,7 @@ import GameCanvas from "../components/GameCanvas.jsx";
 import ChatPanel from "../components/ChatPanel.jsx";
 import InventoryPanel from "../components/InventoryPanel.jsx";
 import TradePanel from "../components/TradePanel.jsx";
+import CombatPanel from "../components/CombatPanel.jsx";
 
 export default function Play() {
   const { selected } = useSelectedCharacter();
@@ -40,13 +41,18 @@ export default function Play() {
           <ChatPanel connection={live} you={selected.id} />
         </div>
         <div className="col-md-4">
+          <CombatPanel
+            connection={live}
+            character={game.status === "connected" ? game.character : null}
+          />
           <InventoryPanel connection={live} />
           <TradePanel connection={live} you={selected.id} />
         </div>
       </div>
       <p className="text-body-secondary mt-2 mb-0">
-        Move with the arrow keys or WASD. Press E next to an item to pick it up.
-        Press Enter to chat, and Escape to go back to the game.
+        Move with the arrow keys or WASD. Press Space to attack a goblin next to
+        you, and E to pick up an item. Press Enter to chat, and Escape to go
+        back to the game.
       </p>
       <p className="text-body-secondary mt-2 mb-0">
         Move with the arrow keys or WASD.

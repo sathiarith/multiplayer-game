@@ -59,3 +59,30 @@ export async function loadItemImages(sources = ITEM_SPRITES) {
   );
   return Object.fromEntries(entries.filter(([, sprite]) => sprite.image));
 }
+
+// Monster animations by monster type: a strip of square frames for each.
+// Like the other art, they come from the Tiny Swords pack and are not in git:
+// without an idle strip, the game draws a placeholder.
+export const MONSTER_SPRITES = {
+  goblin: {
+    idle: "/sprites/monsters/Torch_Goblin_Idle.png",
+    attack: "/sprites/monsters/Torch_Goblin_Attack.png",
+    size: 96, // drawn size on the map, in pixels
+  },
+};
+
+export async function loadMonsterImages(sources = MONSTER_SPRITES) {
+  const entries = await Promise.all(
+    Object.entries(sources).map(async ([type, { idle, attack, size }]) => {
+      const [idleImage, attackImage] = await Promise.all([
+        loadImage(idle).catch(() => null),
+        loadImage(attack).catch(() => null),
+      ]);
+      return [
+        type,
+        { idle: idleImage, attack: attackImage ?? idleImage, size },
+      ];
+    }),
+  );
+  return Object.fromEntries(entries.filter(([, sprite]) => sprite.idle));
+}

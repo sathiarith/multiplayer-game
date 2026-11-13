@@ -221,3 +221,4 @@ designed around them.
 - It sends chat as volatile, so a message typed while disconnected is dropped, not delivered late. It shows only messages the server echoed back.
 - It lists trading partners from the snapshots, within the trade range, and
   counts an offer down from its `expiresAt`. The server checks both again.
+- Space sends `attack` once per press. The client never chooses a target. Monsters are drawn from the newest snapshot, without prediction or blending.

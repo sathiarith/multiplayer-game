@@ -33,6 +33,7 @@ function fakeConnection() {
     get listening() {
       return listener !== null;
     },
+    sendAttack: vi.fn(),
   };
 }
 
@@ -381,4 +382,88 @@ test("E with nothing within reach sends nothing, and neither does E typed into a
   browser.typeIn("KeyE");
 
   expect(connection.sendPickup).not.toHaveBeenCalled();
+});
+
+const goblin = (extra = {}) => ({
+  id: 1,
+  type: "goblin",
+  x: 140,
+  y: 100,
+  hp: 20,
+  maxHp: 40,
+  facing: -1,
+  attacking: false,
+  ...extra,
+});
+
+test("Space asks to attack, once per press, and never from a text box", () => {
+  const { browser, connection, game } = setup();
+  game.start();
+  connection.push({ tick: 1, players: [mine()], items: [], monsters: [] });
+
+  const press = browser.press("Space");
+  browser.typeIn("Space");
+
+  expect(connection.sendAttack).toHaveBeenCalledTimes(1);
+  expect(press.defaultPrevented).toBe(true); // the page does not scroll
+});
+
+test("a monster without pictures is a circle, with a health bar to scale", () => {
+  const { browser, connection, ctx, game } = setup();
+  game.start();
+  connection.push({
+    tick: 1,
+    players: [mine()],
+    items: [],
+    monsters: [goblin()],
+  });
+
+  browser.frame(16);
+
+  expect(ctx.arc).toHaveBeenCalledWith(140, 100, 12, 0, Math.PI * 2);
+  expect(ctx.fillRect).toHaveBeenCalledWith(124, 60, 16, 4); // half of a 32 px bar, 40 px above
+});
+
+test("a monster with pictures idles, and plays its attack strip when it strikes", () => {
+  const browser = fakeEnv();
+  const connection = fakeConnection();
+  const canvas = fakeCanvas();
+  const idle = { name: "idle", width: 1536, height: 192 };
+  const attack = { name: "attack", width: 1536, height: 192 };
+  const game = createNetworkGame({
+    canvas,
+    level,
+    sheets: { ...sheets, monsters: { goblin: { idle, attack, size: 96 } } },
+    connection,
+    you: 1,
+    env: browser.env,
+  });
+  game.start();
+  const drawnWith = (image) =>
+    canvas.ctx.drawImage.mock.calls.some(([used]) => used === image);
+
+  connection.push({
+    tick: 1,
+    players: [mine()],
+    items: [],
+    monsters: [goblin()],
+  });
+  browser.frame(16);
+  expect(drawnWith(idle)).toBe(true);
+  expect(drawnWith(attack)).toBe(false);
+
+  connection.push({
+    tick: 2,
+    players: [mine()],
+    items: [],
+    monsters: [goblin({ attacking: true })],
+  });
+  canvas.ctx.drawImage.mockClear();
+  browser.frame(16);
+  const strike = canvas.ctx.drawImage.mock.calls.find(
+    ([used]) => used === attack,
+  );
+  expect(strike).toBeDefined();
+  expect(strike.slice(1, 5)).toEqual([0, 0, 192, 192]); // the strike starts at its first frame
+  expect(canvas.ctx.scale).toHaveBeenCalledWith(-1, 1); // facing left
 });
