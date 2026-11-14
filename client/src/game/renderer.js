@@ -49,8 +49,13 @@ function drawPlaceholder(ctx, player) {
 }
 
 function drawPlayer(ctx, player, anim, sheets, showHitbox) {
-  const sheet = sheets[anim.action];
-  if (sheet) drawSprite(ctx, player, anim, sheet);
+  // Without the attack picture, a swing is drawn standing still, as before.
+  const shown =
+    anim.action === "attack" && !sheets.attack
+      ? { ...anim, action: "idle" }
+      : anim;
+  const sheet = sheets[shown.action];
+  if (sheet) drawSprite(ctx, player, shown, sheet);
   else drawPlaceholder(ctx, player);
 
   if (showHitbox) {

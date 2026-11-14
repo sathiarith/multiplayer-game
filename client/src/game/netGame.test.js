@@ -467,3 +467,94 @@ test("a monster with pictures idles, and plays its attack strip when it strikes"
   expect(strike.slice(1, 5)).toEqual([0, 0, 192, 192]); // the strike starts at its first frame
   expect(canvas.ctx.scale).toHaveBeenCalledWith(-1, 1); // facing left
 });
+
+const withAttack = { ...sheets, attack: { name: "attack" } };
+
+function setupWith(sheetsToUse) {
+  const browser = fakeEnv();
+  const connection = fakeConnection();
+  const canvas = fakeCanvas();
+  const game = createNetworkGame({
+    canvas,
+    level,
+    sheets: sheetsToUse,
+    connection,
+    you: 1,
+    env: browser.env,
+  });
+  return { browser, connection, ctx: canvas.ctx, game };
+}
+const lastSheet = (ctx) => ctx.drawImage.mock.lastCall[0];
+const frames = (browser, n, ms) => {
+  for (let i = 0; i < n; i++) browser.frame(ms);
+};
+
+test("Space starts my swing at once, facing the monster within reach", () => {
+  const { browser, connection, ctx, game } = setupWith(withAttack);
+  game.start();
+  // The goblin stands 30 px to my left.
+  connection.push({
+    tick: 1,
+    players: [mine(100)],
+    items: [],
+    monsters: [goblin({ x: 70 })],
+  });
+  browser.frame(16);
+  expect(lastSheet(ctx)).toBe(sheets.idle);
+
+  browser.press("Space");
+  browser.frame(16);
+
+  expect(connection.sendAttack).toHaveBeenCalledTimes(1);
+  expect(lastSheet(ctx)).toBe(withAttack.attack);
+  expect(ctx.scale).toHaveBeenLastCalledWith(-1, 1); // turned toward the goblin
+});
+
+test("my swing ends after 0.4 s, and the next waits for my cooldown", () => {
+  const { browser, connection, ctx, game } = setupWith(withAttack);
+  game.start();
+  connection.push({ tick: 1, players: [mine(100)], items: [], monsters: [] });
+  browser.frame(16);
+
+  browser.press("Space"); // swing at 16 ms
+  frames(browser, 5, 100); // 516 ms
+  expect(lastSheet(ctx)).toBe(sheets.idle);
+
+  browser.press("Space"); // 500 ms after the last swing: too soon to swing again
+  browser.frame(16);
+  expect(lastSheet(ctx)).toBe(sheets.idle);
+  expect(connection.sendAttack).toHaveBeenCalledTimes(2); // the server still hears it, and decides
+
+  frames(browser, 3, 100); // 832 ms: the cooldown is over
+  browser.press("Space");
+  browser.frame(16);
+  expect(lastSheet(ctx)).toBe(withAttack.attack);
+});
+
+test("without the attack picture, a swing is drawn standing still", () => {
+  const { browser, connection, ctx, game } = setupWith(sheets);
+  game.start();
+  connection.push({ tick: 1, players: [mine(100)], items: [], monsters: [] });
+  browser.frame(16);
+
+  browser.press("Space");
+  browser.frame(16);
+
+  expect(lastSheet(ctx)).toBe(sheets.idle);
+});
+
+test("another player's swing comes from the snapshot, once per strike", () => {
+  const { browser, connection, ctx, game } = setupWith(withAttack);
+  game.start();
+  connection.push({
+    tick: 1,
+    players: [mine(100), { ...other(140), attacking: true }],
+    items: [],
+    monsters: [],
+  });
+
+  browser.frame(150); // other players are drawn 100 ms in the past
+
+  const used = ctx.drawImage.mock.calls.map(([sheet]) => sheet);
+  expect(used).toContain(withAttack.attack);
+});
