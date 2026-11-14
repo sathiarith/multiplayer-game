@@ -1,6 +1,7 @@
 import { PLAYER_SIZE } from "../../../shared/game.js";
 import { TICK_RATE } from "../../../shared/prediction.js";
-import { advanceAnim, createAnim } from "./animation.js";
+import { advanceAnim, createAnim, startAttack } from "./animation.js";
+import { ATTACK_COOLDOWN_MS, ATTACK_RANGE } from "../../../shared/combat.js";
 import { renderWorld } from "./renderer.js";
 import { hudSnapshot, sameHud } from "./hudState.js";
 import { inputFromKeys, sameInput, anyHeld } from "./input.js";
@@ -56,6 +57,8 @@ export function createNetworkGame({
   let groundItems = []; // items lying on the map, from the newest snapshot
   let monsters = []; // the newest snapshot's monsters, with when each strike began
   const strikeStarts = new Map(); // monster id -> time its current strike began
+  let lastSwingAt = null; // when my own last swing started
+  const swinging = new Set(); // other players whose current strike has already started
 
   // E picks up the nearest item within reach. The server checks again.
   function pickUpNearest() {
@@ -74,12 +77,42 @@ export function createNetworkGame({
     if (nearest) connection.sendPickup(nearest.id);
   }
 
+  // Which way to face for a swing: toward the nearest monster within reach, if any.
+  function facingToward(at, facing) {
+    let nearest = null;
+    for (const m of monsters) {
+      const distance = Math.hypot(m.x - at.x, m.y - at.y);
+      if (
+        distance <= ATTACK_RANGE &&
+        (!nearest || distance < nearest.distance)
+      ) {
+        nearest = { m, distance };
+      }
+    }
+    if (!nearest || nearest.m.x === at.x) return facing;
+    return nearest.m.x < at.x ? -1 : 1;
+  }
+
+  // My own swing starts at once, on my own cooldown. The server decides whether it hit.
+  function swing() {
+    const me = predictor.state();
+    if (!me) return;
+    const time = env.now();
+    if (lastSwingAt !== null && time - lastSwingAt < ATTACK_COOLDOWN_MS) return;
+    lastSwingAt = time;
+    const anim = anims.get(you) ?? createAnim();
+    anims.set(you, startAttack(anim, facingToward(me, anim.facing)));
+  }
+
   // Input: only record what is held. Nothing moves here.
   const onKeyDown = (e) => {
     if (isTyping(e.target)) return;
     if (e.code === "Space" && !isControl(e.target)) {
       e.preventDefault(); // stop the page scrolling
-      if (!e.repeat) connection.sendAttack(); // one request per press
+      if (!e.repeat) {
+        connection.sendAttack(); // one request per press
+        swing();
+      }
       return;
     }
     if (e.code === "KeyE" && !e.repeat) pickUpNearest(); // one request per press, not per repeat
@@ -164,12 +197,14 @@ export function createNetworkGame({
     for (const p of buffer.sample(now - interpolationDelayMs)) {
       if (p.id === you) continue;
       present.add(p.id);
-      const anim = advanceAnim(
-        anims.get(p.id) ?? createAnim(),
-        ORIGIN,
-        p.move,
-        dt,
-      );
+      let current = anims.get(p.id) ?? createAnim();
+      if (p.attacking && !swinging.has(p.id)) {
+        swinging.add(p.id); // a new strike: start it once, from the first frame
+        current = startAttack(current, facingToward(p, current.facing));
+      } else if (!p.attacking) {
+        swinging.delete(p.id);
+      }
+      const anim = advanceAnim(current, ORIGIN, p.move, dt);
       anims.set(p.id, anim);
       entries.push({
         player: {
@@ -210,7 +245,13 @@ export function createNetworkGame({
         anim,
       });
     }
-    for (const id of anims.keys()) if (!present.has(id)) anims.delete(id);
+
+    for (const id of anims.keys()) {
+      if (!present.has(id)) {
+        anims.delete(id);
+        swinging.delete(id);
+      }
+    }
 
     renderWorld(ctx, level, entries, sheets, {
       youId: you,

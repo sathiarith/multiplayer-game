@@ -44,6 +44,7 @@ test("a player starts where the character was saved", () => {
     hp: 100,
     maxHp: 100,
     level: 1,
+    attacking: false,
     ack: 0,
   });
 });
@@ -191,6 +192,7 @@ test("a snapshot is compact, rounded, and carries the tick", () => {
     "hp",
     "maxHp",
     "level",
+    "attacking",
     "ack",
   ]);
   expect(Number(p.x.toFixed(2))).toBe(p.x);
@@ -411,4 +413,23 @@ test("walking no longer earns score", () => {
   world.setInput(1, hold(1, { right: true }));
   steps(world, 12);
   expect(world.get(1).score).toBe(0);
+});
+
+test("an accepted attack shows as a strike in the player's snapshot, for a moment", () => {
+  const world = arena({ dummy });
+  world.add(aria);
+  expect(player(world, 1).attacking).toBe(false);
+
+  world.attack(1);
+  expect(player(world, 1).attacking).toBe(true);
+
+  steps(world, 8);
+  expect(player(world, 1).attacking).toBe(false);
+});
+
+test("a refused attack shows no strike", () => {
+  const world = arena({ dummy }, 5); // nothing in reach
+  world.add(aria);
+  world.attack(1);
+  expect(player(world, 1).attacking).toBe(false);
 });

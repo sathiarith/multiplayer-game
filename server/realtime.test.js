@@ -218,6 +218,7 @@ test("snapshots list every connected player with their position", async () => {
     hp: 100,
     maxHp: 100,
     level: 1,
+    attacking: false,
     ack: 0,
   });
 });

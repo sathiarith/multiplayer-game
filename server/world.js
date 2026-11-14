@@ -120,6 +120,7 @@ export function createWorld(
         level: playerLevel,
         xp: character.xp ?? 0,
         lastAttackAt: null,
+        lastStrikeTick: -Infinity, // the tick of the last accepted attack, for the animation
       });
     },
 
@@ -162,6 +163,7 @@ export function createWorld(
       if (!target) return { ok: false, reason: "no_target" };
 
       player.lastAttackAt = now();
+      player.lastStrikeTick = tick;
       target.hp = applyDamage(target.hp, playerDamage(player.level));
       if (!isDead(target.hp))
         return { ok: true, monster: target.id, killed: false };
@@ -294,6 +296,7 @@ export function createWorld(
           hp: p.state.hp,
           maxHp: p.state.maxHp,
           level: p.level,
+          attacking: tick - p.lastStrikeTick < STRIKE_SHOWN_TICKS,
           ack: p.ack,
         })),
         items: available().map(({ id, item, x, y }) => ({ id, item, x, y })),
