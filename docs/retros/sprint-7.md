@@ -11,7 +11,7 @@
 - Story 7.4 Combat (PRs #94, #95, #96), plus the warrior's attack animation (PR #97)
 - Between sprints: a login that replaces a session ends that session's game,
   and every tab shows the real user (PRs #82, #83)
-- Test count at end of sprint: (run npm test) unit tests and 19 end-to-end
+- Test count at end of sprint: 576 unit tests and 19 end-to-end
   tests, none skipped
 - docs/erd.md: the database schema as a diagram
 
@@ -90,7 +90,7 @@
 
 - Done: Players chat with those nearby, pick up items, trade with each other
   in safe all-or-nothing trades, and fight goblins to earn XP, levels and a
-  place on the leaderboard. (count) unit tests and 19 browser tests pass.
+  place on the leaderboard. 576 unit tests and 19 browser tests pass.
 - Next: Sprint 8: move from SQLite to PostgreSQL and run the whole stack with
   Docker Compose. The trades and pickups need row locking once the database
   is asynchronous.
