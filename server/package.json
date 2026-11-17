@@ -5,7 +5,11 @@
   "main": "index.js",
   "scripts": {
     "dev": "node --env-file-if-exists=.env --watch index.js",
-    "start": "node --env-file-if-exists=.env index.js"
+    "start": "node --env-file-if-exists=.env index.js",
+    "db:migrate": "node --env-file=.env scripts/migrate.js up",
+    "db:rollback": "node --env-file=.env scripts/migrate.js down",
+    "db:status": "node --env-file=.env scripts/migrate.js status",
+    "db:seed": "node --env-file=.env scripts/seed.js"
   },
   "keywords": [],
   "type": "module",
@@ -19,6 +23,7 @@
     "express-rate-limit": "^8.7.1",
     "express-session": "^1.19.0",
     "helmet": "^8.3.0",
+    "pg": "^8.23.1",
     "pino": "^10.4.0",
     "pino-http": "^11.0.0",
     "rate-limit-redis": "^6.0.2",
