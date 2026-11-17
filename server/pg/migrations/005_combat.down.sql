@@ -1,0 +1,2 @@
+DROP TABLE levels;
+ALTER TABLE characters DROP COLUMN xp;
