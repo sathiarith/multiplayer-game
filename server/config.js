@@ -1,4 +1,5 @@
 const DEV_ORIGINS = "http://127.0.0.1:3000,http://localhost:3000";
+const DEV_DATABASE_URL = "postgres://game:game-dev-only@127.0.0.1:5432/game";
 
 // Parses a comma-separated list of origins: scheme://host[:port], nothing else.
 function parseOrigins(raw) {
@@ -88,12 +89,22 @@ export function loadConfig(env = process.env) {
     throw new Error("SOCKET_ADAPTER=redis requires REDIS_URL");
   }
 
+  // Optional in development (the local container); required in production.
+  const databaseUrl = env.DATABASE_URL || (production ? undefined : DEV_DATABASE_URL);
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL must be set in production");
+  }
+  if (!/^postgres(ql)?:\/\//.test(databaseUrl)) {
+    // The URL holds a password, so the message never repeats it.
+    throw new Error("Invalid DATABASE_URL: it must start with postgres:// or postgresql://");
+  }
+
   return {
     nodeEnv,
     production,
     port,
     host: env.HOST ?? "127.0.0.1",
-    dbPath: env.DB_PATH ?? "./data/game.db",
+    databaseUrl,
     logLevel,
     sessionSecret, // may be undefined in development; index.js generates one
     secureCookies: production, // only send cookies over HTTPS in production

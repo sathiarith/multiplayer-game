@@ -14,7 +14,7 @@ export async function startRealtime({
   makeLeaderboard,
   monsters,
 } = {}) {
-  const { app, db, leaderboard } = createTestApp({
+  const { app, db, leaderboard } = await createTestApp({
     ...appOptions,
     makeLeaderboard,
   });
@@ -82,7 +82,8 @@ export async function startRealtime({
     async close() {
       for (const c of clients) c.disconnect();
       await io.close(); // also closes the HTTP server
-      db.close();
+      await app.locals.flushSaves?.(); // the saves those disconnects started
+      await db.close();
     },
   };
 }

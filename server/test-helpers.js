@@ -1,5 +1,5 @@
 import request from "supertest";
-import { openDb } from "./db.js";
+import { openTestDb } from "./pg/test-db.js";
 import { createApp } from "./app.js";
 import { createLogger } from "./logger.js";
 
@@ -20,8 +20,8 @@ export const ALICE = { username: "alice", password: "correct-horse-battery" };
 
 // A fresh app with its own empty in-memory database. `makeLeaderboard` is an
 // optional (db) => leaderboard function, for tests that use Redis.
-export function createTestApp({ logger, makeLeaderboard, ...options } = {}) {
-  const db = openDb(":memory:");
+export async function createTestApp({ logger, makeLeaderboard, ...options } = {}) {
+  const db = await openTestDb();
   const leaderboard = makeLeaderboard?.(db);
   const app = createApp(db, {
     bcryptCost: 4,

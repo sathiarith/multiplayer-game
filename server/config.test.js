@@ -2,6 +2,7 @@ import { test, expect } from "vitest";
 import { loadConfig } from "./config.js";
 
 const GOOD_SECRET = "a".repeat(40);
+const PROD_DB = "postgres://app:secret@db.internal:5432/game";
 
 test("defaults suit local development", () => {
   const c = loadConfig({});
@@ -15,8 +16,8 @@ test("defaults suit local development", () => {
 });
 
 test("settings come from the environment", () => {
-  const c = loadConfig({ PORT: "4000", HOST: "0.0.0.0", DB_PATH: "/tmp/x.db" });
-  expect(c).toMatchObject({ port: 4000, host: "0.0.0.0", dbPath: "/tmp/x.db" });
+  const c = loadConfig({ PORT: "4000", HOST: "0.0.0.0", DATABASE_URL: PROD_DB });
+  expect(c).toMatchObject({ port: 4000, host: "0.0.0.0", databaseUrl: PROD_DB });
 });
 
 test("an invalid port is rejected", () => {
@@ -42,6 +43,7 @@ test("production with a good secret uses secure cookies", () => {
     SESSION_SECRET: GOOD_SECRET,
     ALLOWED_ORIGINS: "https://game.example.com",
     REDIS_URL: "redis://cache:6379",
+    DATABASE_URL: PROD_DB,
   });
   expect(c).toMatchObject({ production: true, secureCookies: true });
 });
@@ -87,6 +89,7 @@ test("production requires explicit https origins", () => {
     ...prod,
     ALLOWED_ORIGINS: "https://game.example.com",
     REDIS_URL: "redis://cache:6379",
+    DATABASE_URL: PROD_DB,
   });
   expect(ok.allowedOrigins).toEqual(["https://game.example.com"]);
 });
@@ -99,6 +102,7 @@ test("log level defaults by environment and rejects unknown values", () => {
       SESSION_SECRET: GOOD_SECRET,
       ALLOWED_ORIGINS: "https://game.example.com",
       REDIS_URL: "redis://cache:6379",
+      DATABASE_URL: PROD_DB,
     }).logLevel,
   ).toBe("info");
   expect(loadConfig({ LOG_LEVEL: "warn" }).logLevel).toBe("warn");
@@ -142,7 +146,7 @@ test("production requires REDIS_URL", () => {
   };
   expect(() => loadConfig(prod)).toThrow(/REDIS_URL/);
   expect(
-    loadConfig({ ...prod, REDIS_URL: "redis://cache:6379" }).redisUrl,
+    loadConfig({ ...prod, REDIS_URL: "redis://cache:6379", DATABASE_URL: PROD_DB }).redisUrl,
   ).toBe("redis://cache:6379");
 });
 
@@ -157,4 +161,29 @@ test("the Socket.IO adapter is off unless asked for, and needs Redis", () => {
   expect(() => loadConfig({ SOCKET_ADAPTER: "kafka" })).toThrow(
     /SOCKET_ADAPTER/,
   );
+});
+
+test("the database defaults to the local container in development, and is required in production", () => {
+  expect(loadConfig({}).databaseUrl).toBe("postgres://game:game-dev-only@127.0.0.1:5432/game");
+  const prod = {
+    NODE_ENV: "production",
+    SESSION_SECRET: GOOD_SECRET,
+    ALLOWED_ORIGINS: "https://game.example.com",
+    REDIS_URL: "redis://cache:6379",
+  };
+  expect(() => loadConfig(prod)).toThrow(/DATABASE_URL/);
+  expect(loadConfig({ ...prod, DATABASE_URL: PROD_DB }).databaseUrl).toBe(PROD_DB);
+});
+
+test("a malformed DATABASE_URL is rejected, and the message never repeats it", () => {
+  const DATABASE_URL = "mysql://root:hunter2@db:3306/game";
+  const error = (() => {
+    try {
+      loadConfig({ DATABASE_URL });
+    } catch (err) {
+      return err;
+    }
+  })();
+  expect(error.message).toMatch(/DATABASE_URL/);
+  expect(error.message).not.toContain("hunter2");
 });
