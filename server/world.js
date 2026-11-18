@@ -151,6 +151,12 @@ export function createWorld(
       if (spot) spot.takenAt = tick;
     },
 
+    // Puts a taken item back at once: used when saving the pickup failed.
+    restore(groundId) {
+      const spot = ground.find((s) => s.id === groundId);
+      if (spot) spot.takenAt = null;
+    },
+
     // A player's attack on the nearest monster within reach. The server picks the
     // target and enforces the cooldown; a miss does not use the cooldown up.
     attack(characterId) {

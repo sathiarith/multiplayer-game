@@ -14,10 +14,18 @@ let db;
 let aria;
 let borin;
 
-beforeEach(() => {
+beforeEach(async () => {
   db = openDb(":memory:");
-  aria = createCharacter(db, createUser(db, "alice", "hash").id, "Aria");
-  borin = createCharacter(db, createUser(db, "bobby", "hash").id, "Borin");
+  aria = await createCharacter(
+    db,
+    (await createUser(db, "alice", "hash")).id,
+    "Aria",
+  );
+  borin = await createCharacter(
+    db,
+    (await createUser(db, "bobby", "hash")).id,
+    "Borin",
+  );
 });
 afterEach(() => db.close());
 
@@ -32,13 +40,16 @@ test("the item definitions are in the database", () => {
   expect(codes).toEqual(["gold_coin", "meat", "wood"]);
 });
 
-test("a new character carries nothing", () => {
-  expect(listInventory(db, aria.id)).toEqual([]);
+test("a new character carries nothing", async () => {
+  expect(await listInventory(db, aria.id)).toEqual([]);
 });
 
-test("picking up the same item again grows one stack instead of adding rows", () => {
-  expect(addItem(db, aria.id, "gold_coin")).toEqual({ ok: true, quantity: 1 });
-  expect(addItem(db, aria.id, "gold_coin", 4)).toEqual({
+test("picking up the same item again grows one stack instead of adding rows", async () => {
+  expect(await addItem(db, aria.id, "gold_coin")).toEqual({
+    ok: true,
+    quantity: 1,
+  });
+  expect(await addItem(db, aria.id, "gold_coin", 4)).toEqual({
     ok: true,
     quantity: 5,
   });
@@ -49,11 +60,11 @@ test("picking up the same item again grows one stack instead of adding rows", ()
   expect(rows.n).toBe(1);
 });
 
-test("the list joins in each item's name and description, sorted by name", () => {
-  addItem(db, aria.id, "wood", 2);
-  addItem(db, aria.id, "gold_coin");
+test("the list joins in each item's name and description, sorted by name", async () => {
+  await addItem(db, aria.id, "wood", 2);
+  await addItem(db, aria.id, "gold_coin");
 
-  expect(listInventory(db, aria.id)).toEqual([
+  expect(await listInventory(db, aria.id)).toEqual([
     {
       code: "gold_coin",
       name: "Gold coin",
@@ -69,23 +80,25 @@ test("the list joins in each item's name and description, sorted by name", () =>
   ]);
 });
 
-test("each character has their own inventory", () => {
-  addItem(db, aria.id, "meat");
-  expect(listInventory(db, borin.id)).toEqual([]);
+test("each character has their own inventory", async () => {
+  await addItem(db, aria.id, "meat");
+  expect(await listInventory(db, borin.id)).toEqual([]);
 });
 
-test("a stack cannot grow past the limit, and a refused add changes nothing", () => {
-  addItem(db, aria.id, "gold_coin", MAX_STACK - 1);
-  expect(addItem(db, aria.id, "gold_coin", 2)).toEqual({
+test("a stack cannot grow past the limit, and a refused add changes nothing", async () => {
+  await addItem(db, aria.id, "gold_coin", MAX_STACK - 1);
+  expect(await addItem(db, aria.id, "gold_coin", 2)).toEqual({
     ok: false,
     reason: "full",
   });
-  expect(listInventory(db, aria.id)[0].quantity).toBe(MAX_STACK - 1);
+  expect((await listInventory(db, aria.id))[0].quantity).toBe(MAX_STACK - 1);
 });
 
-test("an unknown item is an error, and nothing is written", () => {
-  expect(() => addItem(db, aria.id, "dragon_egg")).toThrow(/Unknown item/);
-  expect(listInventory(db, aria.id)).toEqual([]);
+test("an unknown item is an error, and nothing is written", async () => {
+  await expect(addItem(db, aria.id, "dragon_egg")).rejects.toThrow(
+    /Unknown item/,
+  );
+  expect(await listInventory(db, aria.id)).toEqual([]);
 });
 
 test("the database refuses a second row for the same character and item", () => {
@@ -118,39 +131,45 @@ test("the database refuses a quantity of zero or below", () => {
   ).toThrow(/CHECK/i);
 });
 
-test("deleting a character deletes what it carried", () => {
-  addItem(db, aria.id, "meat");
+test("deleting a character deletes what it carried", async () => {
+  await addItem(db, aria.id, "meat");
   db.prepare("DELETE FROM characters WHERE id = ?").run(aria.id);
   expect(db.prepare("SELECT COUNT(*) AS n FROM inventory").get().n).toBe(0);
 });
 
-test("taking part of a stack leaves the rest", () => {
-  addItem(db, aria.id, "wood", 5);
-  expect(removeItem(db, aria.id, "wood", 2)).toEqual({ ok: true, quantity: 3 });
-  expect(listInventory(db, aria.id)[0].quantity).toBe(3);
+test("taking part of a stack leaves the rest", async () => {
+  await addItem(db, aria.id, "wood", 5);
+  expect(await removeItem(db, aria.id, "wood", 2)).toEqual({
+    ok: true,
+    quantity: 3,
+  });
+  expect((await listInventory(db, aria.id))[0].quantity).toBe(3);
 });
 
-test("taking a whole stack removes the row", () => {
-  addItem(db, aria.id, "wood", 2);
-  expect(removeItem(db, aria.id, "wood", 2)).toEqual({ ok: true, quantity: 0 });
-  expect(listInventory(db, aria.id)).toEqual([]);
+test("taking a whole stack removes the row", async () => {
+  await addItem(db, aria.id, "wood", 2);
+  expect(await removeItem(db, aria.id, "wood", 2)).toEqual({
+    ok: true,
+    quantity: 0,
+  });
+  expect(await listInventory(db, aria.id)).toEqual([]);
 });
 
-test("taking more than there is changes nothing", () => {
-  addItem(db, aria.id, "wood", 2);
-  expect(removeItem(db, aria.id, "wood", 3)).toEqual({
+test("taking more than there is changes nothing", async () => {
+  await addItem(db, aria.id, "wood", 2);
+  expect(await removeItem(db, aria.id, "wood", 3)).toEqual({
     ok: false,
     reason: "missing_items",
   });
-  expect(removeItem(db, aria.id, "meat", 1)).toEqual({
+  expect(await removeItem(db, aria.id, "meat", 1)).toEqual({
     ok: false,
     reason: "missing_items",
   });
-  expect(listInventory(db, aria.id)[0].quantity).toBe(2);
+  expect((await listInventory(db, aria.id))[0].quantity).toBe(2);
 });
 
-test("the catalog lists every item by name", () => {
-  expect(listItems(db)).toEqual([
+test("the catalog lists every item by name", async () => {
+  expect(await listItems(db)).toEqual([
     { code: "gold_coin", name: "Gold coin" },
     { code: "meat", name: "Meat" },
     { code: "wood", name: "Wood" },

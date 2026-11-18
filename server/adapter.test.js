@@ -63,7 +63,7 @@ describe.skipIf(!redis)("two game servers sharing Redis", () => {
       });
     }
 
-    const io = attachRealtime(httpServer, {
+    const io = await attachRealtime(httpServer, {
       app,
       db,
       allowedOrigins: [TEST_ORIGIN],
@@ -86,10 +86,10 @@ describe.skipIf(!redis)("two game servers sharing Redis", () => {
     await post("/api/register");
     const login = await post("/api/login");
     const cookie = login.headers.getSetCookie()[0].split(";")[0];
-    const user = findUserByUsername(db, username);
+    const user = await findUserByUsername(db, username);
     return {
       cookie,
-      characterId: createCharacter(db, user.id, characterName).id,
+      characterId: (await createCharacter(db, user.id, characterName)).id,
     };
   }
 

@@ -15,8 +15,15 @@ test("a player defeats a goblin, earns XP, and appears on the leaderboard", asyn
   const character = page.getByRole("region", { name: "Character" });
   await expect(character).toContainText("0 / 50 XP");
 
-  // Walk along the corridor to the first goblin, about 440 pixels away.
-  await hold(page, "ArrowRight", 2200);
+  // Walk right in short steps until the server puts us next to the first goblin.
+  // Walking for a fixed time would cover less ground on a slow machine.
+  const goblin = (await monstersOn(page)).sort((a, b) => a.x - b.x)[0];
+  const myX = async () =>
+    (await page.evaluate(() => window.__game.players())).find((p) => p.name === name)?.x ?? 0;
+  for (let i = 0; i < 60 && (await myX()) < goblin.x - 30; i++) {
+    await hold(page, "ArrowRight", 100); // about 20 pixels a step
+  }
+  expect(await myX()).toBeGreaterThan(goblin.x - 48); // within reach of an attack
 
   // Attack until it falls. The server enforces the cooldown, so extra presses are refused.
   for (let i = 0; i < 40; i++) {

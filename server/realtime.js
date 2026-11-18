@@ -21,7 +21,7 @@ import { loadLevels } from "./levels.js";
 const refuse = (code, message) =>
   Object.assign(new Error(message), { data: { code } });
 
-export function attachRealtime(
+export async function attachRealtime(
   httpServer,
   {
     app,
@@ -38,6 +38,10 @@ export function attachRealtime(
     guard = {}, // tests pass smaller limits
   },
 ) {
+  // Everything that needs the database is loaded BEFORE the server exists: a
+  // connection arriving while we waited could slip past the checks below.
+  const levels = await loadLevels(db); // the XP table, checked once at startup
+
   const guardOptions = {
     ratePerSecond: PROTOCOL.rate.perSecond,
     burst: PROTOCOL.rate.burst,
@@ -63,7 +67,6 @@ export function attachRealtime(
   // socket.request.session is the same session the REST API uses.
   io.engine.use(app.locals.sessionMiddleware);
 
-  const levels = loadLevels(db); // the XP table, checked once at startup
   const world = createWorld(level, {
     spawns: loot,
     respawnTicks: PROTOCOL.pickup.respawnSeconds * TICK_RATE,
@@ -86,18 +89,19 @@ export function attachRealtime(
     return Boolean(p && q && Math.hypot(p.x - q.x, p.y - q.y) <= range);
   };
   // A courtesy check when an offer is made. The real check happens inside the trade.
-  const carries = (characterId, lines) => {
+  const carries = async (characterId, lines) => {
     const carried = new Map(
-      listInventory(db, characterId).map((i) => [i.code, i.quantity]),
+      (await listInventory(db, characterId)).map((i) => [i.code, i.quantity]),
     );
     return lines.every(
       (line) => (carried.get(line.code) ?? 0) >= line.quantity,
     );
   };
-  const sendInventory = (characterId) =>
-    online
-      .get(characterId)
-      ?.emit("inventory", { items: listInventory(db, characterId) });
+  const sendInventory = async (characterId) => {
+    const socket = online.get(characterId);
+    if (socket)
+      socket.emit("inventory", { items: await listInventory(db, characterId) });
+  };
   const tellBoth = (offer, result) => {
     online.get(offer.from)?.emit("trade_result", result);
     online.get(offer.to)?.emit("trade_result", result);
@@ -114,8 +118,11 @@ export function attachRealtime(
     onSaved: (id, state) => leaderboard?.update(id, state.score),
   });
   persistence.start();
+  // A shutdown waits for the saves its disconnects started.
+  app.locals.flushSaves = () => persistence.drain();
 
   // The game loop: one fixed step of the world, then a snapshot for everyone.
+  // It never waits on the database.
   const timer = setInterval(() => {
     if (world.size === 0) return; // nobody is playing
     try {
@@ -135,16 +142,16 @@ export function attachRealtime(
   });
 
   // Runs for every connection attempt. Calling next(error) refuses it.
-  io.use((socket, next) => {
+  io.use(async (socket, next) => {
     try {
       const userId = socket.request.session?.userId;
-      const user = userId ? findUserById(db, userId) : undefined;
+      const user = userId ? await findUserById(db, userId) : undefined;
       if (!user) return next(refuse("not_authenticated", "Please log in"));
 
       // The user comes from the session. Only the character id comes from the client.
       const characterId = parseId(String(socket.handshake.auth?.characterId));
       const character = characterId
-        ? findCharacter(db, user.id, characterId)
+        ? await findCharacter(db, user.id, characterId)
         : undefined;
       if (!character) return next(refuse("not_found", "Character not found"));
 
@@ -161,6 +168,10 @@ export function attachRealtime(
     const { user, character } = socket.data;
     const log = logger.child({ userId: user.id, characterId: character.id });
 
+    // Database work that a handler starts without waiting for it. Its errors are logged.
+    const background = (work) =>
+      work().catch((err) => log.error({ err }, "background work failed"));
+
     socket.join(`session:${socket.request.session.id}`);
     socket.join("world");
 
@@ -175,30 +186,14 @@ export function attachRealtime(
       previous.disconnect(true);
     }
 
-    // The inventory and the item catalog travel with the welcome.
-    let inventory = [];
-    let catalog = [];
-    try {
-      inventory = listInventory(db, character.id);
-      catalog = listItems(db);
-    } catch (err) {
-      log.error({ err }, "could not read the inventory");
-    }
-    socket.emit("welcome", {
-      character,
-      you: character.id,
-      tickRate: TICK_RATE,
-      inventory,
-      catalog,
-      levels,
-    });
-
     // Every incoming message passes through here, including events we have no
     // handler for, so none of them can be used to flood the server.
     const limiter = createGuard(guardOptions);
     let kicked = false;
 
-    // The only event a client may send. False means the message was nonsense.
+    // Each handler answers at once whether the message was valid (false = a
+    // violation), and starts any database work in the background.
+
     function handleInput(raw) {
       const input = parseInput(raw);
       if (!input) return false;
@@ -212,8 +207,6 @@ export function attachRealtime(
       burst: PROTOCOL.chat.burst,
     });
 
-    // Returns false only for nonsense (a violation). A person's mistake is
-    // answered with chat_rejected and is not held against them.
     function handleChat(raw) {
       const parsed = parseChat(raw);
       if (!parsed.ok && parsed.reason === "malformed") return false;
@@ -241,46 +234,45 @@ export function attachRealtime(
       return true;
     }
 
-    // Returns false only for nonsense (a violation).
-    function handlePickup(raw) {
-      const id = parsePickup(raw);
-      if (id === null) return false;
-
+    async function pickUp(id) {
       const check = world.checkPickup(character.id, id, PROTOCOL.pickup.range);
       if (!check.ok) {
         socket.emit("pickup_rejected", { reason: check.reason });
-        return true;
+        return;
       }
-
-      // The database first: if the write fails, the item stays on the ground.
+      // Take it off the map now, before waiting on the database, so nobody can
+      // claim it in the meantime. If saving fails, it goes back.
+      world.take(id);
       let result;
       try {
-        result = addItem(db, character.id, check.item, 1);
+        result = await addItem(db, character.id, check.item, 1);
       } catch (err) {
         log.error({ err }, "pickup failed");
-        socket.emit("pickup_rejected", { reason: "error" });
-        return true;
+        result = { ok: false, reason: "error" };
       }
       if (!result.ok) {
+        world.restore(id);
         socket.emit("pickup_rejected", { reason: result.reason });
-        return true;
+        return;
       }
+      await sendInventory(character.id);
+    }
 
-      world.take(id); // nothing else ran in between: Node handles one message at a time
-      socket.emit("inventory", { items: listInventory(db, character.id) });
+    function handlePickup(raw) {
+      const id = parsePickup(raw);
+      if (id === null) return false;
+      background(() => pickUp(id));
       return true;
     }
 
-    const refuseOffer = (reason) => {
+    const refuseOffer = (reason) =>
       socket.emit("trade_result", { id: null, ok: false, reason });
-      return true;
-    };
 
-    function handleTradeOffer(raw) {
-      const parsed = parseOffer(raw, { maxLines: PROTOCOL.trade.maxLines });
-      if (!parsed) return false; // nonsense: a violation
+    async function makeOffer(parsed) {
       try {
-        const names = new Map(listItems(db).map((i) => [i.code, i.name]));
+        const names = new Map(
+          (await listItems(db)).map((i) => [i.code, i.name]),
+        );
         const lines = [...parsed.give, ...parsed.want];
         if (
           parsed.to === character.id ||
@@ -292,7 +284,7 @@ export function attachRealtime(
         if (!target) return refuseOffer("not_here");
         if (!near(character.id, parsed.to, PROTOCOL.trade.range))
           return refuseOffer("too_far");
-        if (!carries(character.id, parsed.give))
+        if (!(await carries(character.id, parsed.give)))
           return refuseOffer("missing_items");
 
         const created = offers.create({ from: character.id, ...parsed });
@@ -317,9 +309,38 @@ export function attachRealtime(
         });
       } catch (err) {
         log.error({ err }, "trade offer failed");
-        return refuseOffer("error");
+        refuseOffer("error");
       }
+    }
+
+    function handleTradeOffer(raw) {
+      const parsed = parseOffer(raw, { maxLines: PROTOCOL.trade.maxLines });
+      if (!parsed) return false; // nonsense: a violation
+      background(() => makeOffer(parsed));
       return true;
+    }
+
+    async function completeTrade(offer) {
+      let result;
+      try {
+        result = await executeTrade(db, offer); // one transaction: everything or nothing
+      } catch (err) {
+        log.error({ err }, "trade failed");
+        result = { ok: false, reason: "error" };
+      }
+      tellBoth(
+        offer,
+        result.ok
+          ? { id: offer.id, ok: true }
+          : { id: offer.id, ok: false, reason: result.reason },
+      );
+      if (result.ok) {
+        await Promise.all([sendInventory(offer.from), sendInventory(offer.to)]);
+        log.info(
+          { tradeId: offer.id, from: offer.from, to: offer.to },
+          "trade completed",
+        );
+      }
     }
 
     function handleTradeAccept(raw) {
@@ -330,31 +351,12 @@ export function attachRealtime(
         socket.emit("trade_result", { id, ok: false, reason: "gone" });
         return true;
       }
-      offers.remove(id); // an offer is answered once, whatever happens next
+      offers.remove(id); // answered once, decided now, before anything waits
       if (!near(offer.from, offer.to, PROTOCOL.trade.range)) {
         tellBoth(offer, { id, ok: false, reason: "too_far" });
         return true;
       }
-
-      let result;
-      try {
-        result = executeTrade(db, offer); // one transaction: everything or nothing
-      } catch (err) {
-        log.error({ err }, "trade failed");
-        result = { ok: false, reason: "error" };
-      }
-      tellBoth(
-        offer,
-        result.ok ? { id, ok: true } : { id, ok: false, reason: result.reason },
-      );
-      if (result.ok) {
-        sendInventory(offer.from);
-        sendInventory(offer.to);
-        log.info(
-          { tradeId: id, from: offer.from, to: offer.to },
-          "trade completed",
-        );
-      }
+      background(() => completeTrade(offer));
       return true;
     }
 
@@ -427,7 +429,8 @@ export function attachRealtime(
 
     socket.on("disconnect", (reason) => {
       if (online.get(character.id) === socket) {
-        persistence.save(character.id); // the last position, before the player is forgotten
+        // Started before the player is forgotten: the save reads the owner at once.
+        void persistence.save(character.id);
         online.delete(character.id);
         // A player who leaves takes their open offers along, and the other side is told.
         for (const offer of offers.removeFor(character.id)) {
@@ -437,6 +440,30 @@ export function attachRealtime(
         persistence.forget(character.id);
       }
       log.info({ reason }, "player disconnected");
+    });
+
+    // The welcome comes last, once every handler is listening. The inventory and
+    // the item catalog travel with it.
+    background(async () => {
+      let inventory = [];
+      let catalog = [];
+      try {
+        [inventory, catalog] = await Promise.all([
+          listInventory(db, character.id),
+          listItems(db),
+        ]);
+      } catch (err) {
+        log.error({ err }, "could not read the inventory");
+      }
+      socket.emit("welcome", {
+        character,
+        you: character.id,
+        tickRate: TICK_RATE,
+        inventory,
+        catalog,
+        levels,
+      });
+      log.info("player connected");
     });
   });
 

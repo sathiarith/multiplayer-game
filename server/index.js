@@ -88,7 +88,7 @@ const app = createApp(db, {
 });
 
 const httpServer = createServer(app);
-const io = attachRealtime(httpServer, {
+const io = await attachRealtime(httpServer, {
   app,
   db,
   allowedOrigins: config.allowedOrigins,
@@ -108,6 +108,7 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
     logger.info({ signal }, "shutting down");
     setTimeout(() => process.exit(1), 5000).unref(); // do not hang forever
     io.close(async () => {
+      await app.locals.flushSaves?.(); // the saves each disconnect just started
       await Promise.all(
         [redis, ...adapterClients].map((client) => client?.close()),
       );

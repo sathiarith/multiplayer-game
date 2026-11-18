@@ -40,15 +40,16 @@ function move(n) {
   });
   for (let i = 0; i < n; i++) world.step();
 }
-const saved = (user = alice) => listCharacters(db, user.id)[0];
+const saved = async (user = alice) => (await listCharacters(db, user.id))[0];
+// Writes now go through db.run, and the SQL starts with a line break, hence trim().
 const updates = (spy) =>
-  spy.mock.calls.filter(([sql]) => sql.startsWith("UPDATE characters"));
+  spy.mock.calls.filter(([sql]) => sql.trim().startsWith("UPDATE characters"));
 
-beforeEach(() => {
+beforeEach(async () => {
   seq = 0;
   db = openDb(":memory:");
-  alice = createUser(db, "alice", "hash");
-  aria = createCharacter(db, alice.id, "Aria"); // starts at the spawn point, (100, 60)
+  alice = await createUser(db, "alice", "hash");
+  aria = await createCharacter(db, alice.id, "Aria"); // starts at the spawn point, (100, 60)
   world = createWorld(hall);
   world.add(aria);
   owners = new Map([[aria.id, alice.id]]);
@@ -68,86 +69,86 @@ afterEach(() => {
   if (db.open) db.close();
 });
 
-test("a character that has moved is written, with its exact values", () => {
+test("a character that has moved is written, with its exact values", async () => {
   move(3);
-  expect(persistence.save(aria.id)).toBe(true);
-  expect(saved().x).toBeCloseTo(130);
-  expect(saved()).toMatchObject({ y: 60, hp: 100 });
+  expect(await persistence.save(aria.id)).toBe(true);
+  expect((await saved()).x).toBeCloseTo(130);
+  expect(await saved()).toMatchObject({ y: 60, hp: 100 });
 });
 
-test("a character that has not changed is not written again", () => {
-  const prepare = vi.spyOn(db, "prepare");
-  expect(persistence.save(aria.id)).toBe(true); // the first save always writes
-  expect(persistence.save(aria.id)).toBe(false);
-  expect(persistence.save(aria.id)).toBe(false);
-  expect(updates(prepare)).toHaveLength(1);
+test("a character that has not changed is not written again", async () => {
+  const run = vi.spyOn(db, "run");
+  expect(await persistence.save(aria.id)).toBe(true); // the first save always writes
+  expect(await persistence.save(aria.id)).toBe(false);
+  expect(await persistence.save(aria.id)).toBe(false);
+  expect(updates(run)).toHaveLength(1);
 });
 
-test("it writes again once the character moves", () => {
-  persistence.save(aria.id);
+test("it writes again once the character moves", async () => {
+  await persistence.save(aria.id);
   move(2);
-  expect(persistence.save(aria.id)).toBe(true);
-  expect(saved().x).toBeCloseTo(120);
+  expect(await persistence.save(aria.id)).toBe(true);
+  expect((await saved()).x).toBeCloseTo(120);
 });
 
-test("forgetting a character makes the next save write again", () => {
-  persistence.save(aria.id);
+test("forgetting a character makes the next save write again", async () => {
+  await persistence.save(aria.id);
   persistence.forget(aria.id);
-  expect(persistence.save(aria.id)).toBe(true);
+  expect(await persistence.save(aria.id)).toBe(true);
 });
 
-test("a character with nobody online, or not in the world, is not written", () => {
+test("a character with nobody online, or not in the world, is not written", async () => {
   move(2);
   owners.clear();
-  expect(persistence.save(aria.id)).toBe(false);
+  expect(await persistence.save(aria.id)).toBe(false);
 
   owners.set(aria.id, alice.id);
   world.remove(aria.id);
-  expect(persistence.save(aria.id)).toBe(false);
-  expect(saved().x).toBe(100); // nothing was written
+  expect(await persistence.save(aria.id)).toBe(false);
+  expect((await saved()).x).toBe(100); // nothing was written
 });
 
-test("saveAll writes everyone who changed, and says how many", () => {
-  const bob = createUser(db, "bobby", "hash");
-  const borin = createCharacter(db, bob.id, "Borin");
+test("saveAll writes everyone who changed, and says how many", async () => {
+  const bob = await createUser(db, "bobby", "hash");
+  const borin = await createCharacter(db, bob.id, "Borin");
   world.add(borin);
   owners.set(borin.id, bob.id);
 
   move(2); // only Aria moves
-  expect(persistence.saveAll()).toBe(2); // the first time, both are written
-  expect(persistence.saveAll()).toBe(0);
+  expect(await persistence.saveAll()).toBe(2); // the first time, both are written
+  expect(await persistence.saveAll()).toBe(0);
   move(1);
-  expect(persistence.saveAll()).toBe(1); // only Aria changed
-  expect(saved(bob).x).toBe(100);
+  expect(await persistence.saveAll()).toBe(1); // only Aria changed
+  expect((await saved(bob)).x).toBe(100);
 });
 
-test("a database error is logged and does not escape", () => {
+test("a database error is logged and does not escape", async () => {
   db.close();
-  expect(persistence.save(aria.id)).toBe(false);
+  expect(await persistence.save(aria.id)).toBe(false);
   expect(logger.error).toHaveBeenCalledTimes(1);
 });
 
-test("start saves on a timer, and stop ends it", () => {
+test("start saves on a timer, and stop ends it", async () => {
   vi.useFakeTimers();
   persistence.start();
   persistence.start(); // starting twice is harmless
   move(3);
 
   vi.advanceTimersByTime(999);
-  expect(saved().x).toBe(100);
+  expect((await saved()).x).toBe(100);
   vi.advanceTimersByTime(1);
-  expect(saved().x).toBeCloseTo(130);
+  expect((await saved()).x).toBeCloseTo(130);
 
   persistence.stop();
   move(2);
   vi.advanceTimersByTime(5000);
-  expect(saved().x).toBeCloseTo(130); // no more saves
+  expect((await saved()).x).toBeCloseTo(130); // no more saves
 });
 
-test("level, XP and score are saved with the position", () => {
+test("level, XP and score are saved with the position", async () => {
   // A one-hit monster next to Aria (she stands at (100, 60), it at (140, 60)) that never strikes.
   const fighting = createWorld(hall, {
-    levels: loadLevels(db),
+    levels: await loadLevels(db),
     monsters: {
       types: {
         dummy: {
@@ -172,12 +173,12 @@ test("level, XP and score are saved with the position", () => {
     ownerOf: (id) => owners.get(id),
     logger,
   });
-  saver.save(aria.id);
+  await saver.save(aria.id);
 
-  expect(saved()).toMatchObject({ level: 2, xp: 60, score: 60 });
+  expect(await saved()).toMatchObject({ level: 2, xp: 60, score: 60 });
 });
 
-test("onSaved is told about every write, and only about writes", () => {
+test("onSaved is told about every write, and only about writes", async () => {
   const onSaved = vi.fn();
   const watching = createPersistence({
     db,
@@ -189,8 +190,8 @@ test("onSaved is told about every write, and only about writes", () => {
   });
   move(4);
 
-  watching.save(aria.id);
-  watching.save(aria.id); // nothing changed: nothing written, nothing announced
+  await watching.save(aria.id);
+  await watching.save(aria.id); // nothing changed: nothing written, nothing announced
 
   expect(onSaved).toHaveBeenCalledTimes(1);
   expect(onSaved).toHaveBeenCalledWith(
@@ -210,12 +211,12 @@ test("a failing onSaved is logged and does not stop the save", async () => {
   });
   move(4);
 
-  expect(watching.save(aria.id)).toBe(true);
+  expect(await watching.save(aria.id)).toBe(true);
   await vi.waitFor(() => expect(logger.error).toHaveBeenCalledTimes(1));
-  expect(saved().x).toBeCloseTo(140);
+  expect((await saved()).x).toBeCloseTo(140);
 });
 
-test("an onSaved that throws at once is logged too", () => {
+test("an onSaved that throws at once is logged too", async () => {
   const watching = createPersistence({
     db,
     world,
@@ -228,6 +229,6 @@ test("an onSaved that throws at once is logged too", () => {
   });
   move(4);
 
-  expect(watching.save(aria.id)).toBe(true);
+  expect(await watching.save(aria.id)).toBe(true);
   expect(logger.error).toHaveBeenCalledTimes(1);
 });

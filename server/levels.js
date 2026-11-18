@@ -1,11 +1,10 @@
 // The XP table from the database, checked once when it is loaded:
-// [{ level, xpRequired, maxHp }], from level 1 up.
-export function loadLevels(db) {
-  const rows = db
-    .prepare(
-      "SELECT level, xp_required AS xpRequired, max_hp AS maxHp FROM levels ORDER BY level",
-    )
-    .all();
+// [{ level, xpRequired, maxHp }], from level 1 up. The aliases are quoted
+// because PostgreSQL lowercases names that are not.
+export async function loadLevels(db) {
+  const rows = await db.query(
+    `SELECT level, xp_required AS "xpRequired", max_hp AS "maxHp" FROM levels ORDER BY level`,
+  );
   if (rows.length === 0 || rows[0].level !== 1 || rows[0].xpRequired !== 0) {
     throw new Error("The levels table must start at level 1 with 0 XP");
   }

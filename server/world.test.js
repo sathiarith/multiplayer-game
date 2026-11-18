@@ -433,3 +433,10 @@ test("a refused attack shows no strike", () => {
   world.attack(1);
   expect(player(world, 1).attacking).toBe(false);
 });
+
+test("a taken item can be put back at once", () => {
+  const world = createWorld(room, { spawns: loot });
+  world.take(1);
+  world.restore(1);
+  expect(world.snapshot().items.map((i) => i.id)).toEqual([1, 2]);
+});

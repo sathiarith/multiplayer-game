@@ -19,7 +19,7 @@ export async function startRealtime({
     makeLeaderboard,
   });
   const httpServer = createServer(app);
-  const io = attachRealtime(httpServer, {
+  const io = await attachRealtime(httpServer, {
     app,
     db,
     allowedOrigins: [TEST_ORIGIN],
@@ -47,8 +47,8 @@ export async function startRealtime({
     await post("/api/register", creds);
     const login = await post("/api/login", creds);
     const cookie = login.headers.getSetCookie()[0].split(";")[0]; // "sid=s%3A..."
-    const user = findUserByUsername(db, username);
-    const character = createCharacter(db, user.id, characterName);
+    const user = await findUserByUsername(db, username);
+    const character = await createCharacter(db, user.id, characterName);
     return { cookie, userId: user.id, characterId: character.id };
   }
 

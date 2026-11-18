@@ -462,13 +462,13 @@ test("positions are also saved while a player stays connected", async () => {
 test("a player who is standing still is not written again and again", async () => {
   await withServer({ saveEveryMs: 20 }, async (srv) => {
     const alice = await srv.player("alice", "Aria");
-    const prepare = vi.spyOn(srv.db, "prepare");
+    const run = vi.spyOn(srv.db, "run");
     await srv.open(asPlayer(alice));
 
     await wait(300); // many save intervals
 
-    const updates = prepare.mock.calls.filter(([sql]) =>
-      sql.startsWith("UPDATE characters"),
+    const updates = run.mock.calls.filter(([sql]) =>
+      sql.trim().startsWith("UPDATE characters"),
     );
     expect(updates).toHaveLength(1);
   });
@@ -1006,8 +1006,8 @@ test("the welcome carries the catalog of every item", async () => {
 test("an offer reaches the other player, and accepting it moves items both ways", async () => {
   const alice = await rt.player("alice", "Aria");
   const bob = await rt.player("bobby", "Borin");
-  addItem(rt.db, alice.characterId, "gold_coin", 3);
-  addItem(rt.db, bob.characterId, "wood", 2);
+  await addItem(rt.db, alice.characterId, "gold_coin", 3);
+  await addItem(rt.db, bob.characterId, "wood", 2);
   const a = await rt.open(asPlayer(alice));
   const b = await rt.open(asPlayer(bob));
   const ea = tradeEvents(a.socket);
@@ -1046,7 +1046,7 @@ test("the same coins offered to two players and accepted at once are traded only
   const alice = await rt.player("alice", "Aria");
   const bob = await rt.player("bobby", "Borin");
   const carol = await rt.player("carol", "Cara");
-  addItem(rt.db, alice.characterId, "gold_coin", 3);
+  await addItem(rt.db, alice.characterId, "gold_coin", 3);
   const a = await rt.open(asPlayer(alice));
   const b = await rt.open(asPlayer(bob));
   const c = await rt.open(asPlayer(carol));
@@ -1086,7 +1086,7 @@ test("only the receiver may accept or decline, only the sender may cancel, and a
   const alice = await rt.player("alice", "Aria");
   const bob = await rt.player("bobby", "Borin");
   const carol = await rt.player("carol", "Cara");
-  addItem(rt.db, alice.characterId, "gold_coin", 3);
+  await addItem(rt.db, alice.characterId, "gold_coin", 3);
   const a = await rt.open(asPlayer(alice));
   const b = await rt.open(asPlayer(bob));
   const c = await rt.open(asPlayer(carol));
@@ -1140,7 +1140,7 @@ test("offers that cannot work are refused to the sender, without penalty", async
   const alice = await rt.player("alice", "Aria");
   const bob = await rt.player("bobby", "Borin");
   const carol = await rt.player("carol", "Cara"); // registered, but not playing
-  addItem(rt.db, alice.characterId, "gold_coin", 1);
+  await addItem(rt.db, alice.characterId, "gold_coin", 1);
   const a = await rt.open(asPlayer(alice));
   await rt.open(asPlayer(bob));
   const results = hear(a.socket, "trade_result");
@@ -1172,7 +1172,7 @@ test("offers that cannot work are refused to the sender, without penalty", async
 test("an offer to a player who is too far away is refused", async () => {
   const alice = await rt.player("alice", "Aria");
   const bob = await rt.player("bobby", "Borin");
-  addItem(rt.db, alice.characterId, "gold_coin", 1);
+  await addItem(rt.db, alice.characterId, "gold_coin", 1);
   const a = await rt.open(asPlayer(alice));
   const b = await rt.open(asPlayer(bob));
   for (let seq = 1; seq <= 2; seq++) {
@@ -1212,7 +1212,7 @@ test("a malformed trade message is a violation", async () => {
 test("when the sender leaves, the receiver is told the offer is gone", async () => {
   const alice = await rt.player("alice", "Aria");
   const bob = await rt.player("bobby", "Borin");
-  addItem(rt.db, alice.characterId, "gold_coin", 1);
+  await addItem(rt.db, alice.characterId, "gold_coin", 1);
   const a = await rt.open(asPlayer(alice));
   const b = await rt.open(asPlayer(bob));
   const eb = tradeEvents(b.socket);
