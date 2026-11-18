@@ -24,13 +24,12 @@ export function createLeaderboard({
       score: e.score,
     }));
 
-  function fromDatabase(limit) {
+  async function fromDatabase(limit) {
     return present(
-      db
-        .prepare(
-          "SELECT id, name, level, score FROM characters WHERE score > 0 ORDER BY score DESC, id ASC LIMIT ?",
-        )
-        .all(limit),
+      await db.query(
+        "SELECT id, name, level, score FROM characters WHERE score > 0 ORDER BY score DESC, id ASC LIMIT $1",
+        [limit],
+      ),
     );
   }
 
@@ -39,9 +38,9 @@ export function createLeaderboard({
   // a half-built board.
   async function rebuild() {
     if (!redis) return;
-    const rows = db
-      .prepare("SELECT id, score FROM characters WHERE score > 0")
-      .all();
+    const rows = await db.query(
+      "SELECT id, score FROM characters WHERE score > 0",
+    );
     const temporary = `${SCORES}:rebuild`;
     const transaction = redis.multi().del(temporary);
     if (rows.length > 0) {
@@ -66,11 +65,11 @@ export function createLeaderboard({
 
     // The names come from the database, with one query for just these ids.
     const ids = ranked.map((m) => Number(m.value));
-    const rows = db
-      .prepare(
-        `SELECT id, name, level FROM characters WHERE id IN (${ids.map(() => "?").join(",")})`,
-      )
-      .all(...ids);
+    const placeholders = ids.map((_, i) => `$${i + 1}`).join(", ");
+    const rows = await db.query(
+      `SELECT id, name, level FROM characters WHERE id IN (${placeholders})`,
+      ids,
+    );
     const known = new Map(rows.map((r) => [r.id, r]));
     return present(
       ranked

@@ -2,8 +2,8 @@ import { saveCharacterState } from "./characters.js";
 
 export const SAVE_EVERY_MS = 30_000;
 
-// Writes the world's positions, health and scores to the database, but only
-// for characters that changed since the last write.
+// Writes the world's positions, health, scores and progress to the database,
+// but only for characters that changed since the last write.
 export function createPersistence({
   db,
   world,
@@ -13,6 +13,7 @@ export function createPersistence({
   intervalMs = SAVE_EVERY_MS,
 }) {
   const lastWritten = new Map(); // character id -> what was last written, as text
+  const pending = new Set(); // writes still in flight, so a shutdown can wait for them
   const fingerprint = (s) =>
     `${s.x}|${s.y}|${s.hp}|${s.score}|${s.level}|${s.xp}`;
   let timer = null;
@@ -31,34 +32,40 @@ export function createPersistence({
     }
   }
 
-  // Writes one character if it changed. Returns true if a row was written.
+  // Writes one character if it changed. Resolves to true if a row was written.
+  // The state and the owner are read NOW, before anything waits: a player who
+  // leaves is removed from the online list right after this call.
   function save(id) {
     const state = world.get(id);
     const userId = ownerOf(id);
-    if (!state || userId === undefined) return false;
+    if (!state || userId === undefined) return Promise.resolve(false);
 
     const print = fingerprint(state);
-    if (lastWritten.get(id) === print) return false; // nothing new to write
+    if (lastWritten.get(id) === print) return Promise.resolve(false); // nothing new to write
 
-    try {
-      const written = saveCharacterState(db, userId, id, state);
-      if (written) {
-        lastWritten.set(id, print);
-        announce(id, state);
+    const write = (async () => {
+      try {
+        const written = await saveCharacterState(db, userId, id, state);
+        if (written) {
+          lastWritten.set(id, print);
+          announce(id, state);
+        }
+        return written;
+      } catch (err) {
+        // Keep playing: the next save tries again.
+        logger.error({ err, characterId: id }, "could not save character");
+        return false;
       }
-      return written;
-    } catch (err) {
-      // Keep playing: the next save tries again.
-      logger.error({ err, characterId: id }, "could not save character");
-      return false;
-    }
+    })();
+    pending.add(write);
+    write.finally(() => pending.delete(write));
+    return write;
   }
 
-  // Saves everyone in the world. Returns how many rows were written.
-  function saveAll() {
-    let written = 0;
-    for (const id of world.ids()) if (save(id)) written += 1;
-    return written;
+  // Saves everyone in the world. Resolves to how many rows were written.
+  async function saveAll() {
+    const results = await Promise.all(world.ids().map((id) => save(id)));
+    return results.filter(Boolean).length;
   }
 
   return {
@@ -67,9 +74,12 @@ export function createPersistence({
     // Called when a player leaves, so a later join writes again.
     forget: (id) => lastWritten.delete(id),
 
+    // Resolves once every write already started has finished.
+    drain: () => Promise.all([...pending]),
+
     start() {
       if (timer) return; // never run two timers
-      timer = setInterval(saveAll, intervalMs);
+      timer = setInterval(() => void saveAll(), intervalMs);
       timer.unref(); // never keeps the process alive on its own
     },
 

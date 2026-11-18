@@ -1,7 +1,12 @@
 import express from "express";
 import session from "express-session";
 import bcrypt from "bcryptjs";
-import { createUser, findUserByUsername, findUserById } from "./users.js";
+import {
+  createUser,
+  findUserByUsername,
+  findUserById,
+  UsernameTakenError,
+} from "./users.js";
 import {
   parseCredentials,
   parseLogin,
@@ -11,6 +16,7 @@ import {
   listCharacters,
   createCharacter,
   CharacterLimitError,
+  NameTakenError,
   MAX_CHARACTERS,
 } from "./characters.js";
 import { notFoundHandler, errorHandler } from "./errors.js";
@@ -179,7 +185,7 @@ export function createApp(
 
   app.get("/health", async (req, res) => {
     try {
-      db.prepare("SELECT 1").get();
+      await db.one("SELECT 1 AS ok");
       await Promise.all(healthChecks.map((check) => check()));
       res.json({ status: "ok", uptime: Math.floor(process.uptime()) });
     } catch (err) {
@@ -206,8 +212,10 @@ export function createApp(
   app.use(sessionMiddleware);
   app.locals.sessionMiddleware = sessionMiddleware; // shared with the WebSocket server
   // Runs before a route: lets logged-in users through, answers 401 otherwise.
-  function requireAuth(req, res, next) {
-    const user = req.session.userId && findUserById(db, req.session.userId);
+  async function requireAuth(req, res, next) {
+    const user = req.session.userId
+      ? await findUserById(db, req.session.userId)
+      : undefined;
     if (!user) return res.status(401).json(NOT_AUTHENTICATED);
     req.user = user;
     next();
@@ -221,10 +229,10 @@ export function createApp(
     const hash = await bcrypt.hash(password, bcryptCost);
 
     try {
-      const user = createUser(db, username, hash);
+      const user = await createUser(db, username, hash);
       return res.status(201).json(user);
     } catch (err) {
-      if (err.code === "SQLITE_CONSTRAINT_UNIQUE") {
+      if (err instanceof UsernameTakenError) {
         return res.status(409).json({
           error: { code: "username_taken", message: "That username is taken" },
         });
@@ -238,7 +246,7 @@ export function createApp(
     if (parsed.fields) return badRequest(res, parsed.fields);
     const { username, password } = parsed.data;
 
-    const user = findUserByUsername(db, username);
+    const user = await findUserByUsername(db, username);
     // Always run one bcrypt comparison, whether or not the user exists.
     const ok = await bcrypt.compare(
       password,
@@ -272,17 +280,22 @@ export function createApp(
     res.json(await leaderboard.top(TOP_N));
   });
 
-  app.get("/api/characters", requireAuth, (req, res) => {
-    res.json(listCharacters(db, req.user.id));
+  app.get("/api/characters", requireAuth, async (req, res) => {
+    res.json(await listCharacters(db, req.user.id));
   });
 
-  app.post("/api/characters", requireAuth, (req, res) => {
+  app.post("/api/characters", requireAuth, async (req, res) => {
     const parsed = parseNewCharacter(req.body);
     if (parsed.fields) return badRequest(res, parsed.fields);
     const { name, class: characterClass } = parsed.data;
 
     try {
-      const character = createCharacter(db, req.user.id, name, characterClass);
+      const character = await createCharacter(
+        db,
+        req.user.id,
+        name,
+        characterClass,
+      );
       return res.status(201).json(character);
     } catch (err) {
       if (err instanceof CharacterLimitError) {
@@ -293,7 +306,7 @@ export function createApp(
           },
         });
       }
-      if (err.code === "SQLITE_CONSTRAINT_UNIQUE") {
+      if (err instanceof NameTakenError) {
         return res.status(409).json({
           error: {
             code: "name_taken",
