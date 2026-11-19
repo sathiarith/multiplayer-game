@@ -7,7 +7,9 @@ export async function openDatabase(url, { logger, max = 10 } = {}) {
   const pool = new pg.Pool({ connectionString: url, max });
   // An idle connection that drops is replaced by the pool; without a listener
   // the error would crash the process.
-  pool.on("error", (err) => logger?.error({ message: err.message }, "database connection lost"));
+  pool.on("error", (err) =>
+    logger?.error({ message: err.message }, "database connection lost"),
+  );
   const client = await pool.connect();
   try {
     await migrateUp(client);

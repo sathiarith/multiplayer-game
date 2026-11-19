@@ -5,7 +5,7 @@ import {
   API_URL,
   CLIENT_PORT,
   CLIENT_URL,
-  DB_PATH,
+  DATABASE_URL,
   E2E_DIR,
   REDIS_URL,
 } from "./env.js";
@@ -36,7 +36,7 @@ export default defineConfig({
         ...process.env,
         PORT: String(API_PORT),
         HOST: "127.0.0.1",
-        DB_PATH,
+        DATABASE_URL,
         REDIS_URL,
         SESSION_SECRET: "e2e-only-secret-not-used-anywhere-else",
         ALLOWED_ORIGINS: CLIENT_URL,

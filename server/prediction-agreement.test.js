@@ -54,7 +54,7 @@ function simulate({ dropSeqs = [] } = {}) {
   return { errors };
 }
 
-test("with a perfect network the client's prediction matches the server", () => {
+test("with a perfect network the client's prediction matches the server", async () => {
   const { errors } = simulate();
   expect(errors).toHaveLength(plan.length - 2);
   // The server rounds positions to two decimals, and each comparison involves
@@ -62,7 +62,7 @@ test("with a perfect network the client's prediction matches the server", () => 
   for (const error of errors) expect(error).toBeLessThan(0.02);
 });
 
-test("a lost input causes two corrections of one step each, then the prediction agrees again", () => {
+test("a lost input causes two corrections of one step each, then the prediction agrees again", async () => {
   // Input 7 is the first "up and right". The server never hears it, so for
   // that tick it repeats input 6 ("right"). The client replays input 7 on top
   // of that, which is wrong by one step. When input 8 arrives, the server's

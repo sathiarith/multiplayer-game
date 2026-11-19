@@ -22,22 +22,22 @@ function row(label) {
   return line;
 }
 
-test("every event is documented", () => {
+test("every event is documented", async () => {
   for (const event of [...PROTOCOL.events.client, ...PROTOCOL.events.server]) {
     expect(doc, `event ${event}`).toContain(`\`${event}\``);
   }
 });
 
-test("every refusal code is documented", () => {
+test("every refusal code is documented", async () => {
   for (const code of PROTOCOL.refusals)
     expect(doc, code).toContain(`\`${code}\``);
 });
 
-test("the kick reason is documented", () => {
+test("the kick reason is documented", async () => {
   expect(doc).toContain(`\`${PROTOCOL.kickReason}\``);
 });
 
-test("the limits in the document match the code", () => {
+test("the limits in the document match the code", async () => {
   expect(row("Tick rate")).toContain(`${PROTOCOL.tickRate} per second`);
   expect(row("Maximum message size")).toContain(
     `${PROTOCOL.maxMessageBytes} bytes`,
@@ -83,30 +83,30 @@ test("the limits in the document match the code", () => {
   );
 });
 
-test("every chat rejection reason is documented", () => {
+test("every chat rejection reason is documented", async () => {
   for (const reason of PROTOCOL.chatRejections)
     expect(doc, reason).toContain(`\`${reason}\``);
 });
 
-test("the chat length in the protocol is the one the code enforces", () => {
+test("the chat length in the protocol is the one the code enforces", async () => {
   expect(PROTOCOL.chat.maxLength).toBe(CHAT_MAX_LENGTH);
 });
 
-test("every pickup rejection reason is documented", () => {
+test("every pickup rejection reason is documented", async () => {
   for (const reason of PROTOCOL.pickupRejections)
     expect(doc, reason).toContain(`\`${reason}\``);
 });
 
-test("the stack limit in the protocol is the one the code enforces", () => {
+test("the stack limit in the protocol is the one the code enforces", async () => {
   expect(PROTOCOL.pickup.maxStack).toBe(MAX_STACK);
 });
 
-test("every trade result reason is documented", () => {
+test("every trade result reason is documented", async () => {
   for (const reason of PROTOCOL.tradeReasons)
     expect(doc, reason).toContain(`\`${reason}\``);
 });
 
-test("every attack rejection reason is documented", () => {
+test("every attack rejection reason is documented", async () => {
   for (const reason of PROTOCOL.attackRejections)
     expect(doc, reason).toContain(`\`${reason}\``);
 });

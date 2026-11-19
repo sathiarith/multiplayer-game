@@ -1,6 +1,6 @@
 import { test, expect, beforeEach, afterEach, vi } from "vitest";
 import { buildLevel } from "../shared/map.js";
-import { openDb } from "./db.js";
+import { openTestDb } from "./pg/test-db.js";
 import { createUser } from "./users.js";
 import { createCharacter, listCharacters } from "./characters.js";
 import { createWorld } from "./world.js";
@@ -47,7 +47,7 @@ const updates = (spy) =>
 
 beforeEach(async () => {
   seq = 0;
-  db = openDb(":memory:");
+  db = await openTestDb();
   alice = await createUser(db, "alice", "hash");
   aria = await createCharacter(db, alice.id, "Aria"); // starts at the spawn point, (100, 60)
   world = createWorld(hall);
@@ -63,10 +63,10 @@ beforeEach(async () => {
   });
 });
 
-afterEach(() => {
+afterEach(async () => {
   persistence.stop();
   vi.useRealTimers();
-  if (db.open) db.close();
+  if (db.open) await db.close();
 });
 
 test("a character that has moved is written, with its exact values", async () => {
@@ -123,7 +123,7 @@ test("saveAll writes everyone who changed, and says how many", async () => {
 });
 
 test("a database error is logged and does not escape", async () => {
-  db.close();
+  await db.close();
   expect(await persistence.save(aria.id)).toBe(false);
   expect(logger.error).toHaveBeenCalledTimes(1);
 });

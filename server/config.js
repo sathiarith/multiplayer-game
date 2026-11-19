@@ -90,13 +90,16 @@ export function loadConfig(env = process.env) {
   }
 
   // Optional in development (the local container); required in production.
-  const databaseUrl = env.DATABASE_URL || (production ? undefined : DEV_DATABASE_URL);
+  const databaseUrl =
+    env.DATABASE_URL || (production ? undefined : DEV_DATABASE_URL);
   if (!databaseUrl) {
     throw new Error("DATABASE_URL must be set in production");
   }
   if (!/^postgres(ql)?:\/\//.test(databaseUrl)) {
     // The URL holds a password, so the message never repeats it.
-    throw new Error("Invalid DATABASE_URL: it must start with postgres:// or postgresql://");
+    throw new Error(
+      "Invalid DATABASE_URL: it must start with postgres:// or postgresql://",
+    );
   }
 
   return {

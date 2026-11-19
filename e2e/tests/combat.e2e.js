@@ -19,7 +19,9 @@ test("a player defeats a goblin, earns XP, and appears on the leaderboard", asyn
   // Walking for a fixed time would cover less ground on a slow machine.
   const goblin = (await monstersOn(page)).sort((a, b) => a.x - b.x)[0];
   const myX = async () =>
-    (await page.evaluate(() => window.__game.players())).find((p) => p.name === name)?.x ?? 0;
+    (await page.evaluate(() => window.__game.players())).find(
+      (p) => p.name === name,
+    )?.x ?? 0;
   for (let i = 0; i < 60 && (await myX()) < goblin.x - 30; i++) {
     await hold(page, "ArrowRight", 100); // about 20 pixels a step
   }

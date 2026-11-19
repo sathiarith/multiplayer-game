@@ -20,7 +20,11 @@ export const ALICE = { username: "alice", password: "correct-horse-battery" };
 
 // A fresh app with its own empty in-memory database. `makeLeaderboard` is an
 // optional (db) => leaderboard function, for tests that use Redis.
-export async function createTestApp({ logger, makeLeaderboard, ...options } = {}) {
+export async function createTestApp({
+  logger,
+  makeLeaderboard,
+  ...options
+} = {}) {
   const db = await openTestDb();
   const leaderboard = makeLeaderboard?.(db);
   const app = createApp(db, {

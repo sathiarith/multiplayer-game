@@ -3,7 +3,10 @@ import { migrateUp } from "./migrate.js";
 import { ADMIN_URL, TEMPLATE, urlFor } from "./test-db.js";
 
 export async function setup() {
-  const admin = new pg.Client({ connectionString: ADMIN_URL, connectionTimeoutMillis: 2000 });
+  const admin = new pg.Client({
+    connectionString: ADMIN_URL,
+    connectionTimeoutMillis: 2000,
+  });
   try {
     await admin.connect();
   } catch {

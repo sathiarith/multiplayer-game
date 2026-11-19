@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { io as connectClient } from "socket.io-client";
 import { createAdapter } from "@socket.io/redis-adapter";
 import { RedisStore } from "connect-redis";
-import { openDb } from "./db.js";
+import { openTestDb } from "./pg/test-db.js";
 import { createApp } from "./app.js";
 import { attachRealtime } from "./realtime.js";
 import { createCharacter } from "./characters.js";
@@ -32,8 +32,8 @@ describe.skipIf(!redis)("two game servers sharing Redis", () => {
     if (keys.length) await redis.del(keys);
   });
 
-  const newDb = () => {
-    const db = openDb(":memory:");
+  const newDb = async () => {
+    const db = await openTestDb();
     cleanups.push(() => db.close());
     return db;
   };
@@ -128,7 +128,7 @@ describe.skipIf(!redis)("two game servers sharing Redis", () => {
     ].sort();
 
   async function twoServers(withAdapter) {
-    const db = newDb();
+    const db = await newDb();
     const A = await startServer(db, { withAdapter });
     const B = await startServer(db, { withAdapter });
     return { db, A, B };

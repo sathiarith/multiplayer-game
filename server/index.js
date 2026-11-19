@@ -116,7 +116,9 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
     io.close(async () => {
       await app.locals.flushSaves?.(); // the saves each disconnect just started
       await db.close();
-      await Promise.all([redis, ...adapterClients].map((client) => client?.close()));
+      await Promise.all(
+        [redis, ...adapterClients].map((client) => client?.close()),
+      );
       process.exit(0);
     });
   });

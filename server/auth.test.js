@@ -5,10 +5,10 @@ import { createTestApp, ALICE } from "./test-helpers.js";
 let app;
 let db;
 beforeEach(async () => {
-  ({ app, db } = createTestApp());
+  ({ app, db } = await createTestApp());
   await request(app).post("/api/register").send(ALICE);
 });
-afterEach(() => db.close());
+afterEach(async () => db.close());
 
 test("login succeeds, sets a safe cookie, and /me then identifies the user", async () => {
   const agent = request.agent(app);
@@ -87,7 +87,7 @@ const sessionIdOf = (res) =>
     .split(".")[0];
 
 test("a login that replaces a session reports the old session as ended", async () => {
-  const { app } = createTestApp();
+  const { app } = await createTestApp();
   const ended = vi.fn();
   app.locals.onSessionEnded = ended;
   const agent = request.agent(app);
@@ -103,7 +103,7 @@ test("a login that replaces a session reports the old session as ended", async (
 });
 
 test("a failed login leaves the existing session and its game alone", async () => {
-  const { app } = createTestApp();
+  const { app } = await createTestApp();
   const ended = vi.fn();
   app.locals.onSessionEnded = ended;
   const agent = request.agent(app);

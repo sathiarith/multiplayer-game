@@ -16,31 +16,31 @@ function make(options = {}) {
 
 const hits = (guard, n) => Array.from({ length: n }, () => guard.hit());
 
-test("a burst up to the limit is allowed, and then messages are dropped", () => {
+test("a burst up to the limit is allowed, and then messages are dropped", async () => {
   const { guard } = make();
   expect(hits(guard, 4)).toEqual(["ok", "ok", "ok", "drop"]);
 });
 
-test("tokens come back over time", () => {
+test("tokens come back over time", async () => {
   const { guard, advance } = make();
   hits(guard, 3);
   advance(100); // 10 tokens a second: one token after 100 ms
   expect(hits(guard, 2)).toEqual(["ok", "drop"]);
 });
 
-test("the bucket never holds more than the burst", () => {
+test("the bucket never holds more than the burst", async () => {
   const { guard, advance } = make();
   advance(60_000);
   expect(hits(guard, 4)).toEqual(["ok", "ok", "ok", "drop"]);
 });
 
-test("enough rejected messages in a short time mean a kick", () => {
+test("enough rejected messages in a short time mean a kick", async () => {
   const { guard } = make();
   hits(guard, 3); // empties the bucket
   expect(hits(guard, 3)).toEqual(["drop", "drop", "kick"]);
 });
 
-test("a strike counts as a violation without using any tokens", () => {
+test("a strike counts as a violation without using any tokens", async () => {
   const { guard } = make();
   expect([guard.strike(), guard.strike(), guard.strike()]).toEqual([
     "drop",
@@ -50,7 +50,7 @@ test("a strike counts as a violation without using any tokens", () => {
   expect(hits(guard, 3)).toEqual(["ok", "ok", "ok"]); // the bucket is still full
 });
 
-test("rate violations and strikes are counted together", () => {
+test("rate violations and strikes are counted together", async () => {
   const { guard } = make();
   hits(guard, 3);
   expect(guard.hit()).toBe("drop"); // violation 1
@@ -58,7 +58,7 @@ test("rate violations and strikes are counted together", () => {
   expect(guard.hit()).toBe("kick"); // violation 3
 });
 
-test("violations expire after the window", () => {
+test("violations expire after the window", async () => {
   const { guard, advance } = make();
   guard.strike();
   guard.strike();
@@ -66,7 +66,7 @@ test("violations expire after the window", () => {
   expect(guard.strike()).toBe("drop"); // the count started again
 });
 
-test("once the limit is reached further violations still say kick", () => {
+test("once the limit is reached further violations still say kick", async () => {
   const { guard } = make();
   guard.strike();
   guard.strike();

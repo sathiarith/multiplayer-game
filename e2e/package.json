@@ -9,6 +9,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.65.0",
+    "pg": "^8.23.1",
     "redis": "^6.3.1"
   }
 }

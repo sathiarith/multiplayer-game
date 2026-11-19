@@ -1,5 +1,5 @@
 import { test, expect, beforeEach, afterEach } from "vitest";
-import { openDb } from "./db.js";
+import { openTestDb } from "./pg/test-db.js";
 import { createUser } from "./users.js";
 import { createCharacter } from "./characters.js";
 import {
@@ -15,7 +15,7 @@ let aria;
 let borin;
 
 beforeEach(async () => {
-  db = openDb(":memory:");
+  db = await openTestDb();
   aria = await createCharacter(
     db,
     (await createUser(db, "alice", "hash")).id,
@@ -29,14 +29,18 @@ beforeEach(async () => {
 });
 afterEach(() => db.close());
 
-const itemId = (code) =>
-  db.prepare("SELECT id FROM items WHERE code = ?").get(code).id;
+const itemId = async (code) =>
+  (await db.one("SELECT id FROM items WHERE code = $1", [code])).id;
+const insertRow = async (characterId, code, quantity) =>
+  db.run(
+    "INSERT INTO inventory (character_id, item_id, quantity) VALUES ($1, $2, $3)",
+    [characterId, await itemId(code), quantity],
+  );
 
-test("the item definitions are in the database", () => {
-  const codes = db
-    .prepare("SELECT code FROM items ORDER BY code")
-    .all()
-    .map((r) => r.code);
+test("the item definitions are in the database", async () => {
+  const codes = (await db.query("SELECT code FROM items ORDER BY code")).map(
+    (r) => r.code,
+  );
   expect(codes).toEqual(["gold_coin", "meat", "wood"]);
 });
 
@@ -54,9 +58,10 @@ test("picking up the same item again grows one stack instead of adding rows", as
     quantity: 5,
   });
 
-  const rows = db
-    .prepare("SELECT COUNT(*) AS n FROM inventory WHERE character_id = ?")
-    .get(aria.id);
+  const rows = await db.one(
+    "SELECT CAST(COUNT(*) AS integer) AS n FROM inventory WHERE character_id = $1",
+    [aria.id],
+  );
   expect(rows.n).toBe(1);
 });
 
@@ -101,40 +106,29 @@ test("an unknown item is an error, and nothing is written", async () => {
   expect(await listInventory(db, aria.id)).toEqual([]);
 });
 
-test("the database refuses a second row for the same character and item", () => {
-  const insert = db.prepare(
-    "INSERT INTO inventory (character_id, item_id, quantity) VALUES (?, ?, 1)",
-  );
-  insert.run(aria.id, itemId("wood"));
-  expect(() => insert.run(aria.id, itemId("wood"))).toThrow(
-    /UNIQUE|PRIMARY KEY/i,
+test("the database refuses a second row for the same character and item", async () => {
+  await insertRow(aria.id, "wood", 1);
+  await expect(insertRow(aria.id, "wood", 1)).rejects.toThrow(
+    /duplicate key|unique/i,
   );
 });
 
-test("the database refuses an inventory row for a character that does not exist", () => {
-  expect(() =>
-    db
-      .prepare(
-        "INSERT INTO inventory (character_id, item_id, quantity) VALUES (?, ?, 1)",
-      )
-      .run(99999, itemId("wood")),
-  ).toThrow(/FOREIGN KEY/i);
+test("the database refuses an inventory row for a character that does not exist", async () => {
+  await expect(insertRow(99999, "wood", 1)).rejects.toThrow(/foreign key/i);
 });
 
-test("the database refuses a quantity of zero or below", () => {
-  expect(() =>
-    db
-      .prepare(
-        "INSERT INTO inventory (character_id, item_id, quantity) VALUES (?, ?, 0)",
-      )
-      .run(aria.id, itemId("wood")),
-  ).toThrow(/CHECK/i);
+test("the database refuses a quantity of zero or below", async () => {
+  await expect(insertRow(aria.id, "wood", 0)).rejects.toThrow(
+    /check constraint/i,
+  );
 });
 
 test("deleting a character deletes what it carried", async () => {
   await addItem(db, aria.id, "meat");
-  db.prepare("DELETE FROM characters WHERE id = ?").run(aria.id);
-  expect(db.prepare("SELECT COUNT(*) AS n FROM inventory").get().n).toBe(0);
+  await db.run("DELETE FROM characters WHERE id = $1", [aria.id]);
+  expect(
+    (await db.one("SELECT CAST(COUNT(*) AS integer) AS n FROM inventory")).n,
+  ).toBe(0);
 });
 
 test("taking part of a stack leaves the rest", async () => {

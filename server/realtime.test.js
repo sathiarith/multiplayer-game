@@ -8,7 +8,7 @@ let rt;
 beforeEach(async () => {
   rt = await startRealtime();
 });
-afterEach(() => rt.close());
+afterEach(async () => rt.close());
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const asPlayer = (p) => ({
@@ -188,10 +188,10 @@ test("logging out disconnects that session's game connection only", async () => 
 
 test("a database failure during the handshake is refused with a generic error", async () => {
   const alice = await rt.player("alice", "Aria");
-  rt.db.exec("DROP TABLE characters"); // the user and session still work
+  await rt.db.run("DROP TABLE characters CASCADE");
   const { error } = await rt.open(asPlayer(alice));
   expect(error.data.code).toBe("internal_error");
-  expect(error.message).not.toMatch(/no such table/);
+  expect(error.message).not.toMatch(/no such table|does not exist/);
 });
 
 test("the welcome says who you are and how fast the server ticks", async () => {
@@ -418,11 +418,10 @@ test("a flooding client does not disturb the others, and may connect again after
 });
 
 const savedState = (srv, id) =>
-  srv.db
-    .prepare(
-      "SELECT pos_x AS x, pos_y AS y, hp, score FROM characters WHERE id = ?",
-    )
-    .get(id);
+  srv.db.one(
+    "SELECT pos_x AS x, pos_y AS y, hp, score FROM characters WHERE id = $1",
+    [id],
+  );
 
 test("a player's position is saved when they leave, and they return to it", async () => {
   const alice = await rt.player("alice", "Aria");
@@ -431,11 +430,13 @@ test("a player's position is saved when they leave, and they return to it", asyn
   await snapshotWhere(first.socket, (s) => me(s, alice.characterId).x >= 150);
 
   first.socket.disconnect();
-  await vi.waitFor(() =>
-    expect(savedState(rt, alice.characterId).x).toBeGreaterThanOrEqual(150),
+  await vi.waitFor(async () =>
+    expect((await savedState(rt, alice.characterId)).x).toBeGreaterThanOrEqual(
+      150,
+    ),
   );
 
-  const saved = savedState(rt, alice.characterId);
+  const saved = await savedState(rt, alice.characterId);
   const second = await rt.open(asPlayer(alice));
   expect(second.welcome.character).toMatchObject({ x: saved.x, y: saved.y });
   const snap = await snapshotWhere(
@@ -452,8 +453,8 @@ test("positions are also saved while a player stays connected", async () => {
 
     socket.emit("input", hold(1, { right: true }));
 
-    await vi.waitFor(() =>
-      expect(savedState(srv, alice.characterId).x).toBeGreaterThan(100),
+    await vi.waitFor(async () =>
+      expect((await savedState(srv, alice.characterId)).x).toBeGreaterThan(100),
     );
     expect(socket.connected).toBe(true);
   });
@@ -488,9 +489,11 @@ test("everyone who is connected is saved when the server disconnects them all", 
 
   rt.io.disconnectSockets(true); // what closing the server does to every player
 
-  await vi.waitFor(() => {
-    expect(savedState(rt, alice.characterId).x).toBeGreaterThanOrEqual(150);
-    expect(savedState(rt, bob.characterId).x).toBeLessThanOrEqual(70);
+  await vi.waitFor(async () => {
+    expect((await savedState(rt, alice.characterId)).x).toBeGreaterThanOrEqual(
+      150,
+    );
+    expect((await savedState(rt, bob.characterId)).x).toBeLessThanOrEqual(70);
   });
 });
 
@@ -502,15 +505,17 @@ test("a player kicked for abuse is saved too", async () => {
     // Walk first, so there is a position worth saving.
     socket.emit("input", hold(1, { right: true }));
     await snapshotWhere(socket, (s) => me(s, alice.characterId).x >= 120);
-    expect(savedState(srv, alice.characterId).x).toBe(100); // nothing has been saved yet
+    expect((await savedState(srv, alice.characterId)).x).toBe(100); // nothing has been saved yet
 
     const { kicked } = watch(socket);
     for (let seq = 2; seq <= 50; seq++)
       socket.emit("input", hold(seq, { right: true }));
     await kicked;
 
-    await vi.waitFor(() =>
-      expect(savedState(srv, alice.characterId).x).toBeGreaterThanOrEqual(120),
+    await vi.waitFor(async () =>
+      expect(
+        (await savedState(srv, alice.characterId)).x,
+      ).toBeGreaterThanOrEqual(120),
     );
   });
 });
@@ -521,7 +526,7 @@ test("a failed save is logged, and the game carries on", async () => {
     const alice = await srv.player("alice", "Aria");
     const { socket } = await srv.open(asPlayer(alice));
 
-    srv.db.exec("DROP TABLE characters"); // saving fails from now on
+    await srv.db.run("DROP TABLE characters CASCADE"); // saving fails from now on
     socket.emit("input", hold(1, { right: true })); // a change, so the next save really tries to write
 
     await vi.waitFor(() =>
@@ -588,12 +593,15 @@ test("killing a goblin gives XP, which is the score, saved and shown on the lead
     });
     socket.disconnect(); // leaving saves the character
 
-    await vi.waitFor(() =>
-      expect(savedState(srv, alice.characterId)).toMatchObject({ score: 25 }),
+    await vi.waitFor(async () =>
+      expect(await savedState(srv, alice.characterId)).toMatchObject({
+        score: 25,
+      }),
     );
-    const row = srv.db
-      .prepare("SELECT level, xp FROM characters WHERE id = ?")
-      .get(alice.characterId);
+    const row = await srv.db.one(
+      "SELECT level, xp FROM characters WHERE id = $1",
+      [alice.characterId],
+    );
     expect(row).toEqual({ level: 1, xp: 25 });
     const res = await fetch(`${srv.url}/api/leaderboard`, {
       headers: { Cookie: alice.cookie },
@@ -926,7 +934,11 @@ test("two players reaching for the same item: exactly one gets it", async () => 
   await vi.waitFor(() => expect(outcomes).toHaveLength(2));
   expect(outcomes.sort()).toEqual(["gone", "got it"]);
   expect(
-    rt.db.prepare("SELECT SUM(quantity) AS total FROM inventory").get().total,
+    (
+      await rt.db.one(
+        "SELECT CAST(SUM(quantity) AS integer) AS total FROM inventory",
+      )
+    ).total,
   ).toBe(1);
 });
 
@@ -966,7 +978,7 @@ test("if the inventory cannot be saved, the item stays on the ground", async () 
       socket.once("pickup_rejected", resolve),
     );
 
-    srv.db.exec("DROP TABLE inventory"); // saving fails from now on
+    await srv.db.run("DROP TABLE inventory"); // saving fails from now on
     socket.emit("pickup", { id: gold.id });
 
     expect(await rejected).toEqual({ reason: "error" });
@@ -982,14 +994,15 @@ const tradeEvents = (socket) => ({
   results: hear(socket, "trade_result"),
   inventory: hear(socket, "inventory"),
 });
-const goldOf = (srv, characterId) =>
-  srv.db
-    .prepare(
-      `SELECT COALESCE(SUM(inventory.quantity), 0) AS n
+const goldOf = async (srv, characterId) =>
+  (
+    await srv.db.one(
+      `SELECT CAST(COALESCE(SUM(inventory.quantity), 0) AS integer) AS n
          FROM inventory JOIN items ON items.id = inventory.item_id
-        WHERE items.code = 'gold_coin' AND inventory.character_id = ?`,
+        WHERE items.code = 'gold_coin' AND inventory.character_id = $1`,
+      [characterId],
     )
-    .get(characterId).n;
+  ).n;
 const carried = (events) =>
   Object.fromEntries(
     events.inventory.at(-1).items.map((i) => [i.code, i.quantity]),
@@ -1076,9 +1089,9 @@ test("the same coins offered to two players and accepted at once are traded only
     "ok",
   ]);
   const total =
-    goldOf(rt, alice.characterId) +
-    goldOf(rt, bob.characterId) +
-    goldOf(rt, carol.characterId);
+    (await goldOf(rt, alice.characterId)) +
+    (await goldOf(rt, bob.characterId)) +
+    (await goldOf(rt, carol.characterId));
   expect(total).toBe(3); // no coin was created
 });
 
@@ -1133,7 +1146,7 @@ test("only the receiver may accept or decline, only the sender may cancel, and a
     }),
   );
 
-  expect(goldOf(rt, alice.characterId)).toBe(3); // nothing moved
+  expect(await goldOf(rt, alice.characterId)).toBe(3); // nothing moved
 });
 
 test("offers that cannot work are refused to the sender, without penalty", async () => {

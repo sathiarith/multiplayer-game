@@ -8,17 +8,17 @@ import {
 } from "./test-helpers.js";
 
 const opened = [];
-function make(options) {
-  const t = createTestApp(options);
+async function make(options) {
+  const t = await createTestApp(options);
   opened.push(t.db);
   return t.app;
 }
-afterEach(() => {
+afterEach(async () => {
   while (opened.length) opened.pop().close();
 });
 
 test("responses carry security headers and hide the framework", async () => {
-  const res = await request(make()).get("/health");
+  const res = await request(await make()).get("/health");
   expect(res.headers["x-content-type-options"]).toBe("nosniff");
   expect(res.headers["x-frame-options"]).toBeDefined();
   expect(res.headers["content-security-policy"]).toBeDefined();
@@ -26,13 +26,15 @@ test("responses carry security headers and hide the framework", async () => {
 });
 
 test("error responses carry the headers too", async () => {
-  const res = await request(make()).get("/nope");
+  const res = await request(await make()).get("/nope");
   expect(res.status).toBe(404);
   expect(res.headers["x-content-type-options"]).toBe("nosniff");
 });
 
 test("login is blocked after too many failed attempts", async () => {
-  const app = make({ rateLimits: { login: { limit: 3, windowMs: 60_000 } } });
+  const app = await make({
+    rateLimits: { login: { limit: 3, windowMs: 60_000 } },
+  });
   await request(app).post("/api/register").send(ALICE);
   const bad = { username: "alice", password: "definitely-not-it" };
 
@@ -49,7 +51,9 @@ test("login is blocked after too many failed attempts", async () => {
 });
 
 test("successful logins do not count against the limit", async () => {
-  const app = make({ rateLimits: { login: { limit: 2, windowMs: 60_000 } } });
+  const app = await make({
+    rateLimits: { login: { limit: 2, windowMs: 60_000 } },
+  });
   await request(app).post("/api/register").send(ALICE);
   for (let i = 0; i < 5; i++) {
     expect((await request(app).post("/api/login").send(ALICE)).status).toBe(
@@ -59,7 +63,7 @@ test("successful logins do not count against the limit", async () => {
 });
 
 test("registration is limited", async () => {
-  const app = make({
+  const app = await make({
     rateLimits: { register: { limit: 2, windowMs: 60_000 } },
   });
   for (const username of ["user_one", "user_two"]) {
@@ -77,7 +81,7 @@ test("registration is limited", async () => {
 const EVIL = "http://evil.example";
 
 test("a preflight from the allowed origin is approved, with credentials", async () => {
-  const res = await request(make())
+  const res = await request(await make())
     .options("/api/login")
     .set("Origin", TEST_ORIGIN)
     .set("Access-Control-Request-Method", "POST")
@@ -90,7 +94,7 @@ test("a preflight from the allowed origin is approved, with credentials", async 
 });
 
 test("a preflight from any other origin gets no approval", async () => {
-  const res = await request(make())
+  const res = await request(await make())
     .options("/api/login")
     .set("Origin", EVIL)
     .set("Access-Control-Request-Method", "POST");
@@ -100,7 +104,7 @@ test("a preflight from any other origin gets no approval", async () => {
 });
 
 test("responses are readable by the allowed origin only", async () => {
-  const app = make();
+  const app = await make();
   const ok = await request(app).get("/health").set("Origin", TEST_ORIGIN);
   expect(ok.headers["access-control-allow-origin"]).toBe(TEST_ORIGIN);
   expect(ok.headers["access-control-expose-headers"]).toMatch(/x-request-id/i);
@@ -111,7 +115,7 @@ test("responses are readable by the allowed origin only", async () => {
 });
 
 test("a cross-site login attempt is refused before any route runs", async () => {
-  const app = make();
+  const app = await make();
   await request(app).post("/api/register").send(ALICE);
   const res = await request(app)
     .post("/api/login")
@@ -123,7 +127,7 @@ test("a cross-site login attempt is refused before any route runs", async () => 
 });
 
 test("a forged cross-site request cannot act as a logged-in user", async () => {
-  const app = make();
+  const app = await make();
   const agent = await loggedInAgent(app, "alice");
   await agent.post("/api/characters").send({ name: "Aria" });
 
@@ -145,7 +149,7 @@ test("a forged cross-site request cannot act as a logged-in user", async () => {
 });
 
 test("the opaque 'null' origin is refused", async () => {
-  const res = await request(make())
+  const res = await request(await make())
     .post("/api/register")
     .set("Origin", "null")
     .send(ALICE);
@@ -153,7 +157,7 @@ test("the opaque 'null' origin is refused", async () => {
 });
 
 test("the allowed origin may make state-changing requests", async () => {
-  const res = await request(make())
+  const res = await request(await make())
     .post("/api/register")
     .set("Origin", TEST_ORIGIN)
     .send(ALICE);
@@ -161,7 +165,7 @@ test("the allowed origin may make state-changing requests", async () => {
 });
 
 test("form-encoded bodies are ignored, so a plain HTML form cannot log anyone in", async () => {
-  const app = make();
+  const app = await make();
   await request(app).post("/api/register").send(ALICE);
   const res = await request(app).post("/api/login").type("form").send(ALICE);
   expect(res.status).toBe(400);

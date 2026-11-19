@@ -6,10 +6,10 @@ import { errorHandler } from "./errors.js";
 
 let app;
 let db;
-beforeEach(() => {
-  ({ app, db } = createTestApp());
+beforeEach(async () => {
+  ({ app, db } = await createTestApp());
 });
-afterEach(() => db.close());
+afterEach(async () => db.close());
 
 test("unknown routes return a JSON 404", async () => {
   for (const [method, path] of [
@@ -64,7 +64,7 @@ test("unexpected errors become a generic 500 that leaks nothing", async () => {
   spy.mockRestore();
 });
 
-test("if a response has already started, the error is passed on untouched", () => {
+test("if a response has already started, the error is passed on untouched", async () => {
   const err = new Error("too late");
   const res = { headersSent: true, status: vi.fn(), json: vi.fn() };
   const next = vi.fn();

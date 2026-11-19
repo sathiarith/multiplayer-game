@@ -3,17 +3,17 @@ import request from "supertest";
 import { createTestApp } from "./test-helpers.js";
 
 const opened = [];
-afterEach(() => {
-  while (opened.length) opened.pop().close();
+afterEach(async () => {
+  while (opened.length) await opened.pop().close();
 });
-function make(options) {
-  const t = createTestApp(options);
+async function make(options) {
+  const t = await createTestApp(options);
   opened.push(t.db);
   return t.app;
 }
 
 test("Swagger UI is served when docs are enabled", async () => {
-  const res = await request(make({ docs: true })).get("/api/docs/");
+  const res = await request(await make({ docs: true })).get("/api/docs/");
   expect(res.status).toBe(200);
   expect(res.text).toMatch(/swagger/i);
   const csp = res.headers["content-security-policy"];
@@ -22,7 +22,7 @@ test("Swagger UI is served when docs are enabled", async () => {
 });
 
 test("the served UI embeds this API's spec", async () => {
-  const res = await request(make({ docs: true })).get(
+  const res = await request(await make({ docs: true })).get(
     "/api/docs/swagger-ui-init.js",
   );
   expect(res.status).toBe(200);
@@ -30,7 +30,7 @@ test("the served UI embeds this API's spec", async () => {
 });
 
 test("the documentation is not served unless enabled", async () => {
-  const res = await request(make()).get("/api/docs/");
+  const res = await request(await make()).get("/api/docs/");
   expect(res.status).toBe(404);
   expect(res.body.error.code).toBe("not_found");
 });

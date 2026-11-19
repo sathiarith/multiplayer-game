@@ -1,7 +1,7 @@
 import { test, describe, expect, afterAll, afterEach, vi } from "vitest";
 import crypto from "node:crypto";
 import request from "supertest";
-import { openDb } from "./db.js";
+import { openTestDb } from "./pg/test-db.js";
 import { createUser } from "./users.js";
 import { createCharacter } from "./characters.js";
 import { createLeaderboard, TOP_N } from "./leaderboard.js";
@@ -16,11 +16,11 @@ afterAll(async () => {
 });
 
 const open = [];
-afterEach(() => {
-  while (open.length) open.pop().close();
+afterEach(async () => {
+  while (open.length) await open.pop().close();
 });
-const newDb = () => {
-  const db = openDb(":memory:");
+const newDb = async () => {
+  const db = await openTestDb();
   open.push(db);
   return db;
 };
@@ -29,11 +29,11 @@ const newDb = () => {
 async function addPlayer(db, name, score, level = 1) {
   const user = await createUser(db, `user_${name}`, "hash");
   const character = await createCharacter(db, user.id, name);
-  db.prepare("UPDATE characters SET score = ?, level = ? WHERE id = ?").run(
+  await db.run("UPDATE characters SET score = $1, level = $2 WHERE id = $3", [
     score,
     level,
     character.id,
-  );
+  ]);
   return character.id;
 }
 const names = (entries) => entries.map((e) => e.name);
@@ -41,7 +41,7 @@ const names = (entries) => entries.map((e) => e.name);
 // ---- these always run (the database answers) ----
 
 test("characters are ranked by score, highest first, with only the public fields", async () => {
-  const db = newDb();
+  const db = await newDb();
   await addPlayer(db, "Aria", 30);
   await addPlayer(db, "Borin", 50, 2);
   await addPlayer(db, "Corin", 10);
@@ -56,18 +56,18 @@ test("characters are ranked by score, highest first, with only the public fields
 });
 
 test("characters with no points are not listed", async () => {
-  const db = newDb();
+  const db = await newDb();
   await addPlayer(db, "Aria", 5);
   await addPlayer(db, "Dara", 0);
   expect(names(await createLeaderboard({ db }).top())).toEqual(["Aria"]);
 });
 
 test("an empty game has an empty board", async () => {
-  expect(await createLeaderboard({ db: newDb() }).top()).toEqual([]);
+  expect(await createLeaderboard({ db: await newDb() }).top()).toEqual([]);
 });
 
 test("at most ten are returned, and a smaller limit is respected", async () => {
-  const db = newDb();
+  const db = await newDb();
   for (let i = 1; i <= 12; i++) await addPlayer(db, `Hero${i}`, i);
   const board = createLeaderboard({ db });
 
@@ -80,7 +80,7 @@ test("at most ten are returned, and a smaller limit is respected", async () => {
 });
 
 test("equal scores are listed lower id first", async () => {
-  const db = newDb();
+  const db = await newDb();
   await addPlayer(db, "First", 5);
   await addPlayer(db, "Second", 5);
   await addPlayer(db, "Third", 5);
@@ -92,14 +92,14 @@ test("equal scores are listed lower id first", async () => {
 });
 
 test("without Redis, update, remove and rebuild do nothing and do not fail", async () => {
-  const board = createLeaderboard({ db: newDb() });
+  const board = createLeaderboard({ db: await newDb() });
   await expect(board.update(1, 5)).resolves.toBeUndefined();
   await expect(board.remove(1)).resolves.toBeUndefined();
   await expect(board.rebuild()).resolves.toBeUndefined();
 });
 
 test("when Redis fails the board is answered from the database, with a warning", async () => {
-  const db = newDb();
+  const db = await newDb();
   await addPlayer(db, "Aria", 30);
   await addPlayer(db, "Borin", 50);
   const logger = { warn: vi.fn() };
@@ -116,7 +116,7 @@ test("when Redis fails the board is answered from the database, with a warning",
 });
 
 test("the endpoint needs a login, and lists the best scores", async () => {
-  const { app, db } = createTestApp();
+  const { app, db } = await createTestApp();
   open.push(db);
   await addPlayer(db, "Aria", 30);
   await addPlayer(db, "Borin", 50);
@@ -147,7 +147,7 @@ describe.skipIf(!redis)("the leaderboard in Redis", () => {
   });
 
   test("rebuilding fills the sorted set from the database", async () => {
-    const db = newDb();
+    const db = await newDb();
     const aria = await addPlayer(db, "Aria", 30);
     const borin = await addPlayer(db, "Borin", 50);
     await addPlayer(db, "Dara", 0);
@@ -163,7 +163,7 @@ describe.skipIf(!redis)("the leaderboard in Redis", () => {
   });
 
   test("the first read builds the board when Redis has nothing", async () => {
-    const db = newDb();
+    const db = await newDb();
     await addPlayer(db, "Aria", 30);
     await addPlayer(db, "Borin", 50);
     expect(await redis.exists(ready)).toBe(0);
@@ -175,7 +175,7 @@ describe.skipIf(!redis)("the leaderboard in Redis", () => {
   });
 
   test("if Redis is wiped later, the next read rebuilds the board", async () => {
-    const db = newDb();
+    const db = await newDb();
     await addPlayer(db, "Aria", 30);
     const board = make(db);
     await board.top();
@@ -186,7 +186,7 @@ describe.skipIf(!redis)("the leaderboard in Redis", () => {
   });
 
   test("an update changes the order, and a zero score removes the character", async () => {
-    const db = newDb();
+    const db = await newDb();
     const aria = await addPlayer(db, "Aria", 30);
     const borin = await addPlayer(db, "Borin", 50);
     const board = make(db);
@@ -203,7 +203,7 @@ describe.skipIf(!redis)("the leaderboard in Redis", () => {
   });
 
   test("reading the board does not sort the characters table", async () => {
-    const db = newDb();
+    const db = await newDb();
     for (let i = 1; i <= 12; i++) await addPlayer(db, `Hero${i}`, i);
     const board = make(db);
     await board.rebuild();
@@ -217,7 +217,7 @@ describe.skipIf(!redis)("the leaderboard in Redis", () => {
   });
 
   test("a member that has no character any more is skipped", async () => {
-    const db = newDb();
+    const db = await newDb();
     await addPlayer(db, "Aria", 30);
     const board = make(db);
     await board.rebuild();

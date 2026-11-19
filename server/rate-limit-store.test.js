@@ -2,7 +2,7 @@ import { test, describe, expect, afterAll, afterEach } from "vitest";
 import crypto from "node:crypto";
 import request from "supertest";
 import { RedisStore as RateLimitRedisStore } from "rate-limit-redis";
-import { openDb } from "./db.js";
+import { openTestDb } from "./pg/test-db.js";
 import { createApp } from "./app.js";
 import { connectRedis } from "./redis.js";
 import { probeRedis, REDIS_URL } from "./redis-test-helpers.js";
@@ -18,11 +18,11 @@ afterAll(async () => {
 });
 
 const open = [];
-afterEach(() => {
-  while (open.length) open.pop().close();
+afterEach(async () => {
+  while (open.length) await open.pop().close();
 });
-const newDb = () => {
-  const db = openDb(":memory:");
+const newDb = async () => {
+  const db = await openTestDb();
   open.push(db);
   return db;
 };
@@ -76,9 +76,9 @@ async function useUpTheLimit(app) {
 
 // ---- these always run ----
 
-test("each limiter is given its own store, by name", () => {
+test("each limiter is given its own store, by name", async () => {
   const names = [];
-  createApp(newDb(), {
+  createApp(await newDb(), {
     ...base,
     rateLimitStore: (name) => {
       names.push(name);
@@ -89,7 +89,7 @@ test("each limiter is given its own store, by name", () => {
 });
 
 test("a store that is shared keeps the count across a restart, even for the right password", async () => {
-  const db = newDb();
+  const db = await newDb();
   // Each app gets its own store objects, sharing the data underneath, as with Redis.
   const shared = { login: new Map(), register: new Map() };
   const options = {
@@ -107,7 +107,7 @@ test("a store that is shared keeps the count across a restart, even for the righ
 });
 
 test("the default in-memory limiter forgets everything on a restart", async () => {
-  const db = newDb();
+  const db = await newDb();
   await useUpTheLimit(createApp(db, { ...base, rateLimits: twoFailures }));
 
   const restarted = createApp(db, { ...base, rateLimits: twoFailures });
@@ -115,7 +115,7 @@ test("the default in-memory limiter forgets everything on a restart", async () =
 });
 
 test("successful logins are taken back out of the count, in any store", async () => {
-  const db = newDb();
+  const db = await newDb();
   const app = createApp(db, {
     ...base,
     rateLimits: { login: { limit: 2, windowMs: 60_000 } },
@@ -127,7 +127,7 @@ test("successful logins are taken back out of the count, in any store", async ()
 });
 
 test("login and register are counted separately", async () => {
-  const db = newDb();
+  const db = await newDb();
   const app = createApp(db, {
     ...base,
     rateLimits: {
@@ -147,7 +147,7 @@ test("login and register are counted separately", async () => {
 });
 
 test("when the store fails the request is refused, never let through unlimited", async () => {
-  const app = createApp(newDb(), {
+  const app = createApp(await newDb(), {
     ...base,
     rateLimitStore: () => new BrokenStore(),
   });
@@ -182,7 +182,9 @@ describe.skipIf(!redis)("rate limits in Redis", () => {
   });
 
   test("failed logins are counted in Redis, and the key expires with the window", async () => {
-    const app = makeApp(newDb(), { login: { limit: 3, windowMs: 60_000 } });
+    const app = makeApp(await newDb(), {
+      login: { limit: 3, windowMs: 60_000 },
+    });
     await request(app).post("/api/register").send(ALICE);
     for (let i = 0; i < 3; i++) await login(app, WRONG);
 
@@ -195,7 +197,7 @@ describe.skipIf(!redis)("rate limits in Redis", () => {
   });
 
   test("a block survives a server restart", async () => {
-    const db = newDb();
+    const db = await newDb();
     await useUpTheLimit(makeApp(db, twoFailures));
 
     const restarted = makeApp(db, twoFailures);
@@ -203,7 +205,7 @@ describe.skipIf(!redis)("rate limits in Redis", () => {
   });
 
   test("the count starts again after the window", async () => {
-    const app = makeApp(newDb(), { login: { limit: 2, windowMs: 1000 } });
+    const app = makeApp(await newDb(), { login: { limit: 2, windowMs: 1000 } });
     await request(app).post("/api/register").send(ALICE);
     await login(app, WRONG);
     await login(app, WRONG);
@@ -215,7 +217,7 @@ describe.skipIf(!redis)("rate limits in Redis", () => {
   });
 
   test("login and register use separate keys", async () => {
-    const app = makeApp(newDb(), {
+    const app = makeApp(await newDb(), {
       login: { limit: 5, windowMs: 60_000 },
       register: { limit: 5, windowMs: 60_000 },
     });
@@ -227,7 +229,9 @@ describe.skipIf(!redis)("rate limits in Redis", () => {
   });
 
   test("successful logins do not use up the allowance", async () => {
-    const app = makeApp(newDb(), { login: { limit: 2, windowMs: 60_000 } });
+    const app = makeApp(await newDb(), {
+      login: { limit: 2, windowMs: 60_000 },
+    });
     await request(app).post("/api/register").send(ALICE);
     for (let i = 0; i < 5; i++)
       expect((await login(app, ALICE)).status).toBe(200);
@@ -235,7 +239,7 @@ describe.skipIf(!redis)("rate limits in Redis", () => {
 
   test("when Redis is lost, limited routes fail fast instead of being let through", async () => {
     const own = await connectRedis(REDIS_URL, { timeoutMs: 1000 });
-    const app = makeApp(newDb(), undefined, own);
+    const app = makeApp(await newDb(), undefined, own);
     await request(app).post("/api/register").send(ALICE);
 
     await own.close();

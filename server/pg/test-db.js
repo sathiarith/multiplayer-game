@@ -4,7 +4,8 @@ import { pgDatabase } from "../database.js";
 
 // The server's maintenance database, used only to create and drop test databases.
 export const ADMIN_URL =
-  process.env.TEST_PG_URL ?? "postgres://game:game-dev-only@127.0.0.1:5432/postgres";
+  process.env.TEST_PG_URL ??
+  "postgres://game:game-dev-only@127.0.0.1:5432/postgres";
 // Migrated once per run; every test database is a copy of it.
 export const TEMPLATE = "game_test_template";
 
@@ -15,7 +16,10 @@ export function urlFor(name) {
 }
 
 export async function probePostgres() {
-  const client = new pg.Client({ connectionString: ADMIN_URL, connectionTimeoutMillis: 500 });
+  const client = new pg.Client({
+    connectionString: ADMIN_URL,
+    connectionTimeoutMillis: 500,
+  });
   try {
     await client.connect();
     await client.end();
@@ -38,7 +42,11 @@ async function admin(sql) {
 // A new database with a random name: empty, or a copy of `template`. And a way to drop it.
 export async function createTestDatabase({ template } = {}) {
   const name = `test_${crypto.randomUUID().replaceAll("-", "")}`; // letters and digits only
-  await admin(template ? `CREATE DATABASE ${name} TEMPLATE ${template}` : `CREATE DATABASE ${name}`);
+  await admin(
+    template
+      ? `CREATE DATABASE ${name} TEMPLATE ${template}`
+      : `CREATE DATABASE ${name}`,
+  );
   return {
     url: urlFor(name),
     drop: () => admin(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`),
