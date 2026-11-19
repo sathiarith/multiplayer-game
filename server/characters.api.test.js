@@ -5,10 +5,10 @@ import { SPAWN } from "./characters.js";
 
 let app;
 let db;
-beforeEach(() => {
-  ({ app, db } = createTestApp());
+beforeEach(async () => {
+  ({ app, db } = await createTestApp());
 });
-afterEach(() => db.close());
+afterEach(async () => db.close());
 
 test("every character route requires login", async () => {
   expect((await request(app).get("/api/characters")).status).toBe(401);
@@ -85,7 +85,7 @@ test("users only see their own characters", async () => {
 test("an unexpected database failure creating a character returns a generic 500", async () => {
   const spy = vi.spyOn(console, "error").mockImplementation(() => {});
   const agent = await loggedInAgent(app, "alice");
-  db.exec("DROP TABLE characters"); // the user and session still exist
+  await db.run("DROP TABLE characters CASCADE"); // the user and session still exist
   const res = await agent.post("/api/characters").send({ name: "Aria" });
   expect(res.status).toBe(500);
   expect(res.body.error.code).toBe("internal_error");

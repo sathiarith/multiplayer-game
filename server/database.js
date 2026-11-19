@@ -1,84 +1,61 @@
-// The server's whole view of the database: async methods that Part 2 backs with
-// PostgreSQL. SQL uses $1, $2 ... placeholders, in order, each once.
+// The server's whole view of the database, backed by PostgreSQL:
+// query, one, run, transaction, isUniqueViolation, close.
 
-// $1, $2 ... become SQLite's ?. Any other order is refused, so a mistake shows today.
-function toSqlite(sql) {
-  let expected = 1;
-  return sql.replace(/\$(\d+)/g, (_, n) => {
-    if (Number(n) !== expected) {
-      throw new Error(
-        `Parameters must be $1, $2 ... in order, each once: ${sql}`,
-      );
-    }
-    expected += 1;
-    return "?";
-  });
-}
+export function pgDatabase(pool) {
+  let closed = false;
 
-export function sqliteDatabase(raw) {
-  const statements = new Map(); // each SQL string is prepared once
-  const prepare = (sql) => {
-    let statement = statements.get(sql);
-    if (!statement) {
-      statement = raw.prepare(toSqlite(sql));
-      statements.set(sql, statement);
-    }
-    return statement;
+  // The methods, sending queries through `runner`: the pool, or one
+  // transaction's own connection.
+  function methods(runner, inTransaction) {
+    const db = {
+      engine: "postgres",
+
+      async query(sql, params = []) {
+        return (await runner.query(sql, params)).rows;
+      },
+
+      async one(sql, params = []) {
+        return (await runner.query(sql, params)).rows[0];
+      },
+
+      async run(sql, params = []) {
+        return { changes: (await runner.query(sql, params)).rowCount ?? 0 };
+      },
+
+      // Runs work(tx) on ONE connection, from BEGIN to COMMIT. Undoes everything
+      // if it throws. A transaction started inside another one joins it.
+      async transaction(work) {
+        if (inTransaction) return work(db);
+        const client = await pool.connect();
+        let broken = false;
+        try {
+          await client.query("BEGIN");
+          const result = await work(methods(client, true));
+          await client.query("COMMIT");
+          return result;
+        } catch (err) {
+          try {
+            await client.query("ROLLBACK");
+          } catch {
+            broken = true; // a connection that cannot even roll back is thrown away
+          }
+          throw err;
+        } finally {
+          client.release(broken); // always back to the pool, or destroyed if broken
+        }
+      },
+
+      isUniqueViolation: (err) => err?.code === "23505",
+    };
+    return db;
+  }
+
+  const db = methods(pool, false);
+  db.close = async () => {
+    if (closed) return;
+    closed = true;
+    await pool.end();
   };
-  let inTransaction = false;
-
-  const db = {
-    engine: "sqlite",
-
-    async query(sql, params = []) {
-      const statement = prepare(sql);
-      if (statement.reader) return statement.all(...params);
-      statement.run(...params);
-      return [];
-    },
-
-    async one(sql, params = []) {
-      return (await db.query(sql, params))[0];
-    },
-
-    async run(sql, params = []) {
-      const statement = prepare(sql);
-      if (statement.reader) return { changes: statement.all(...params).length };
-      return { changes: statement.run(...params).changes };
-    },
-
-    // Runs work(tx), committing if it succeeds and undoing everything if it throws.
-    // A transaction started inside another one joins it.
-    async transaction(work) {
-      if (inTransaction) return work(db);
-      raw.exec("BEGIN IMMEDIATE");
-      inTransaction = true;
-      try {
-        const result = await work(db);
-        raw.exec("COMMIT");
-        return result;
-      } catch (err) {
-        raw.exec("ROLLBACK");
-        throw err;
-      } finally {
-        inTransaction = false;
-      }
-    },
-
-    isUniqueViolation: (err) =>
-      err?.code === "SQLITE_CONSTRAINT_UNIQUE" ||
-      err?.code === "SQLITE_CONSTRAINT_PRIMARYKEY",
-
-    close: () => raw.close(),
-    get open() {
-      return raw.open;
-    },
-
-    // SQLite only, for tests and migrations. Part 2 removes these.
-    raw,
-    prepare: (sql) => raw.prepare(sql),
-    exec: (sql) => raw.exec(sql),
-    pragma: (...args) => raw.pragma(...args),
-  };
+  Object.defineProperty(db, "open", { get: () => !closed });
   return db;
 }

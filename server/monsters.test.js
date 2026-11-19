@@ -12,7 +12,7 @@ const POSITIVE_WHOLE = [
   "respawnSeconds",
 ];
 
-test("every monster type has a name and positive whole numbers", () => {
+test("every monster type has a name and positive whole numbers", async () => {
   for (const [code, type] of Object.entries(MONSTERS.types)) {
     expect(typeof type.name, code).toBe("string");
     for (const field of POSITIVE_WHOLE) {
@@ -24,7 +24,7 @@ test("every monster type has a name and positive whole numbers", () => {
   }
 });
 
-test("every monster on the map is a known type, standing on a floor tile", () => {
+test("every monster on the map is a known type, standing on a floor tile", async () => {
   for (const spawn of MONSTERS.spawns) {
     expect(MONSTERS.types[spawn.type], spawn.type).toBeDefined();
     const x = (spawn.col + 0.5) * level.tileSize;

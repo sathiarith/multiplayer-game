@@ -59,6 +59,7 @@ Handled:
 - The server listens on `127.0.0.1` unless `HOST` says otherwise.
 - Unexpected errors return a generic message, never a stack trace.
 - End-to-end tests run on separate ports with their own database and Redis database 15, and a flush only ever touches that database.
+- `DATABASE_URL` holds a password: required from the environment in production, never logged or echoed in errors. The development default only reaches the local container.
 
 Evidence: `config.test.js`, `security.test.js`, `errors.test.js`.
 

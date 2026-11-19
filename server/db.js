@@ -1,16 +1,20 @@
-import Database from "better-sqlite3";
-import fs from "node:fs";
-import path from "node:path";
-import { migrate } from "./migrate.js";
-import { sqliteDatabase } from "./database.js";
+import pg from "pg";
+import { migrateUp } from "./pg/migrate.js";
+import { pgDatabase } from "./database.js";
 
-// Pass ":memory:" for a throwaway database (used by tests).
-export function openDb(file = process.env.DB_PATH ?? "./data/game.db") {
-  if (file !== ":memory:") {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
+// Opens a connection pool, brings the schema up to date, and returns the interface.
+export async function openDatabase(url, { logger, max = 10 } = {}) {
+  const pool = new pg.Pool({ connectionString: url, max });
+  // An idle connection that drops is replaced by the pool; without a listener
+  // the error would crash the process.
+  pool.on("error", (err) =>
+    logger?.error({ message: err.message }, "database connection lost"),
+  );
+  const client = await pool.connect();
+  try {
+    await migrateUp(client);
+  } finally {
+    client.release();
   }
-  const raw = new Database(file);
-  raw.pragma("foreign_keys = ON"); // off by default in SQLite
-  migrate(raw);
-  return sqliteDatabase(raw);
+  return pgDatabase(pool);
 }

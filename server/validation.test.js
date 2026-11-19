@@ -8,11 +8,11 @@ import {
 
 const ok = { username: "alice_01", password: "correct-horse-battery" };
 
-test("valid credentials parse unchanged", () => {
+test("valid credentials parse unchanged", async () => {
   expect(parseCredentials(ok)).toEqual({ data: ok });
 });
 
-test("rejects short, long, or oddly-shaped usernames", () => {
+test("rejects short, long, or oddly-shaped usernames", async () => {
   for (const username of [
     "ab",
     "a".repeat(21),
@@ -24,7 +24,7 @@ test("rejects short, long, or oddly-shaped usernames", () => {
   }
 });
 
-test("rejects short passwords and non-strings", () => {
+test("rejects short passwords and non-strings", async () => {
   expect(
     parseCredentials({ ...ok, password: "short" }).fields.password,
   ).toBeDefined();
@@ -33,7 +33,7 @@ test("rejects short passwords and non-strings", () => {
   ).toBeDefined();
 });
 
-test("rejects passwords over bcrypt's 72-byte limit", () => {
+test("rejects passwords over bcrypt's 72-byte limit", async () => {
   expect(
     parseCredentials({ ...ok, password: "x".repeat(73) }).fields.password,
   ).toBeDefined();
@@ -42,19 +42,19 @@ test("rejects passwords over bcrypt's 72-byte limit", () => {
   ).toBeUndefined();
 });
 
-test("unknown fields are rejected, not silently dropped", () => {
+test("unknown fields are rejected, not silently dropped", async () => {
   const r = parseCredentials({ ...ok, isAdmin: true, role: "admin" });
   expect(r.fields.isAdmin).toBe("not allowed");
   expect(r.fields.role).toBe("not allowed");
 });
 
-test("anything that is not a JSON object fails with a body error", () => {
+test("anything that is not a JSON object fails with a body error", async () => {
   for (const input of [undefined, null, "text", 42, [], [ok]]) {
     expect(parseCredentials(input).fields.body).toBeDefined();
   }
 });
 
-test("login checks shape only, so older weak passwords can still be tried", () => {
+test("login checks shape only, so older weak passwords can still be tried", async () => {
   expect(
     parseLogin({ username: "alice", password: "short" }).data,
   ).toBeDefined();
@@ -78,21 +78,21 @@ test("login checks shape only, so older weak passwords can still be tried", () =
   ).toBe("not allowed");
 });
 
-test("a new character defaults to the warrior class", () => {
+test("a new character defaults to the warrior class", async () => {
   expect(parseNewCharacter({ name: "Aria" }).data).toEqual({
     name: "Aria",
     class: "warrior",
   });
 });
 
-test("new characters cannot set their own stats", () => {
+test("new characters cannot set their own stats", async () => {
   const r = parseNewCharacter({ name: "Aria", level: 99, hp: 9999, x: 5 });
   expect(r.fields.level).toBe("not allowed");
   expect(r.fields.hp).toBe("not allowed");
   expect(r.fields.x).toBe("not allowed");
 });
 
-test("bad names and classes are rejected", () => {
+test("bad names and classes are rejected", async () => {
   for (const name of ["", "ab", "x".repeat(17), "bad name", 42, undefined]) {
     expect(parseNewCharacter({ name }).fields.name).toBeDefined();
   }
@@ -101,7 +101,7 @@ test("bad names and classes are rejected", () => {
   ).toBeDefined();
 });
 
-test("ids accept plain positive integers only", () => {
+test("ids accept plain positive integers only", async () => {
   expect(parseId("1")).toBe(1);
   expect(parseId("42")).toBe(42);
   for (const raw of [

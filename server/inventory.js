@@ -24,51 +24,48 @@ export function listItems(db) {
   return db.query("SELECT code, name FROM items ORDER BY name");
 }
 
-// Adds `amount` of an item, in one transaction.
+// Adds `amount` of an item, in one statement: insert, or grow the stack, but
+// only while the result stays within MAX_STACK. Postgres locks the row while
+// the statement runs, so two adds at once both count.
 // { ok: true, quantity } or { ok: false, reason: "full" }. Throws for an unknown item.
 export function addItem(db, characterId, code, amount = 1) {
   return db.transaction(async (tx) => {
     const id = await itemId(tx, code);
     const row = await tx.one(
-      "SELECT quantity FROM inventory WHERE character_id = $1 AND item_id = $2",
-      [characterId, id],
-    );
-    const quantity = (row?.quantity ?? 0) + amount;
-    if (quantity > MAX_STACK) return { ok: false, reason: "full" };
-
-    await tx.run(
       `INSERT INTO inventory (character_id, item_id, quantity) VALUES ($1, $2, $3)
-       ON CONFLICT (character_id, item_id) DO UPDATE SET quantity = excluded.quantity`,
-      [characterId, id, quantity],
+       ON CONFLICT (character_id, item_id) DO UPDATE
+         SET quantity = inventory.quantity + excluded.quantity
+         WHERE inventory.quantity + excluded.quantity <= $4
+       RETURNING quantity`,
+      [characterId, id, amount, MAX_STACK],
     );
-    return { ok: true, quantity };
+    if (!row) return { ok: false, reason: "full" };
+    return { ok: true, quantity: row.quantity };
   });
 }
 
-// Takes `amount` of an item away, in one transaction. The row disappears at zero.
-// { ok: true, quantity } or { ok: false, reason: "missing_items" }. Throws for an unknown item.
+// Takes `amount` of an item away. Each statement checks the quantity as it
+// changes it, so two removals at once can never take the same items twice.
+// The row disappears at zero. { ok: true, quantity } or
+// { ok: false, reason: "missing_items" }. Throws for an unknown item.
 export function removeItem(db, characterId, code, amount = 1) {
   return db.transaction(async (tx) => {
     const id = await itemId(tx, code);
-    const row = await tx.one(
-      "SELECT quantity FROM inventory WHERE character_id = $1 AND item_id = $2",
-      [characterId, id],
+    const emptied = await tx.one(
+      `DELETE FROM inventory
+        WHERE character_id = $1 AND item_id = $2 AND quantity = $3
+        RETURNING quantity`,
+      [characterId, id, amount],
     );
-    if (!row || row.quantity < amount)
-      return { ok: false, reason: "missing_items" };
+    if (emptied) return { ok: true, quantity: 0 };
 
-    const quantity = row.quantity - amount;
-    if (quantity === 0) {
-      await tx.run(
-        "DELETE FROM inventory WHERE character_id = $1 AND item_id = $2",
-        [characterId, id],
-      );
-    } else {
-      await tx.run(
-        "UPDATE inventory SET quantity = $1 WHERE character_id = $2 AND item_id = $3",
-        [quantity, characterId, id],
-      );
-    }
-    return { ok: true, quantity };
+    const left = await tx.one(
+      `UPDATE inventory SET quantity = quantity - $1
+        WHERE character_id = $2 AND item_id = $3 AND quantity > $1
+        RETURNING quantity`,
+      [amount, characterId, id],
+    );
+    if (!left) return { ok: false, reason: "missing_items" };
+    return { ok: true, quantity: left.quantity };
   });
 }

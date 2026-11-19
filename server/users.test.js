@@ -1,12 +1,14 @@
-import { test, expect, beforeEach } from "vitest";
-import { openDb } from "./db.js";
+import { test, expect, beforeEach, afterEach } from "vitest";
+import { openTestDb } from "./pg/test-db.js";
 import { createUser, findUserByUsername, UsernameTakenError } from "./users.js";
 import { findUserById } from "./users.js";
 
 let db;
-beforeEach(() => {
-  db = openDb(":memory:"); // a fresh empty database for every test
+beforeEach(async () => {
+  db = await openTestDb(); // a fresh empty database for every test
 });
+
+afterEach(() => db.close());
 
 test("creates and finds a user", async () => {
   const user = await createUser(db, "alice", "hash");

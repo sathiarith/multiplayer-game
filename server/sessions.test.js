@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import request from "supertest";
 import { createClient } from "redis";
 import { RedisStore } from "connect-redis";
-import { openDb } from "./db.js";
+import { openTestDb } from "./pg/test-db.js";
 import { createApp } from "./app.js";
 import { connectRedis } from "./redis.js";
 import { startRealtime } from "./realtime-test-helpers.js";
@@ -36,11 +36,11 @@ afterAll(async () => {
 });
 
 const open = [];
-afterEach(() => {
-  while (open.length) open.pop().close();
+afterEach(async () => {
+  while (open.length) await open.pop().close();
 });
-const newDb = () => {
-  const db = openDb(":memory:");
+const newDb = async () => {
+  const db = await openTestDb();
   open.push(db);
   return db;
 };
@@ -48,7 +48,7 @@ const newDb = () => {
 // ---- these always run ----
 
 test("without Redis a restart logs everyone out (the in-memory store)", async () => {
-  const db = newDb();
+  const db = await newDb();
   const first = request.agent(
     createApp(db, { bcryptCost: 4, sessionSecret: SECRET }),
   );
@@ -71,12 +71,12 @@ test("/health fails when a dependency check fails, and passes when they all pass
   const options = { bcryptCost: 4, sessionSecret: SECRET };
 
   const ok = await request(
-    createApp(newDb(), { ...options, healthChecks: [pass, pass] }),
+    createApp(await newDb(), { ...options, healthChecks: [pass, pass] }),
   ).get("/health");
   expect(ok.status).toBe(200);
 
   const down = await request(
-    createApp(newDb(), { ...options, healthChecks: [pass, fail] }),
+    createApp(await newDb(), { ...options, healthChecks: [pass, fail] }),
   ).get("/health");
   expect(down.status).toBe(503);
   expect(down.body).toEqual({ status: "unavailable" });
@@ -107,7 +107,7 @@ describe.skipIf(!redis)("sessions in Redis", () => {
   });
 
   test("a login is stored in Redis with its data and an expiry of about a week", async () => {
-    const agent = request.agent(makeApp(newDb()));
+    const agent = request.agent(makeApp(await newDb()));
     await agent.post("/api/register").send(ALICE);
     expect(await keys()).toHaveLength(0); // registering does not start a session
 
@@ -122,7 +122,7 @@ describe.skipIf(!redis)("sessions in Redis", () => {
   });
 
   test("a new server process using the same Redis still knows the user", async () => {
-    const db = newDb();
+    const db = await newDb();
     const first = request.agent(makeApp(db));
     await first.post("/api/register").send(ALICE);
     const login = await first.post("/api/login").send(ALICE);
@@ -137,7 +137,7 @@ describe.skipIf(!redis)("sessions in Redis", () => {
   });
 
   test("logging out deletes the session from Redis", async () => {
-    const app = makeApp(newDb());
+    const app = makeApp(await newDb());
     const agent = request.agent(app);
     await agent.post("/api/register").send(ALICE);
     const login = await agent.post("/api/login").send(ALICE);
@@ -151,7 +151,7 @@ describe.skipIf(!redis)("sessions in Redis", () => {
   });
 
   test("logging in again replaces the old session instead of adding one", async () => {
-    const app = makeApp(newDb());
+    const app = makeApp(await newDb());
     const agent = request.agent(app);
     await agent.post("/api/register").send(ALICE);
     const first = await agent.post("/api/login").send(ALICE);
@@ -166,7 +166,7 @@ describe.skipIf(!redis)("sessions in Redis", () => {
   });
 
   test("a session that is gone from Redis is no longer logged in", async () => {
-    const agent = request.agent(makeApp(newDb()));
+    const agent = request.agent(makeApp(await newDb()));
     await agent.post("/api/register").send(ALICE);
     await agent.post("/api/login").send(ALICE);
     expect((await agent.get("/api/me")).status).toBe(200);
@@ -177,7 +177,7 @@ describe.skipIf(!redis)("sessions in Redis", () => {
   });
 
   test("two users have separate sessions, and ending one leaves the other", async () => {
-    const app = makeApp(newDb());
+    const app = makeApp(await newDb());
     const alice = request.agent(app);
     const bob = request.agent(app);
     for (const [agent, user] of [
@@ -214,7 +214,7 @@ describe.skipIf(!redis)("sessions in Redis", () => {
   });
 
   test("when the Redis connection is lost, requests fail fast and /health says 503", async () => {
-    const db = newDb();
+    const db = await newDb();
     const own = await connectRedis(REDIS_URL, { timeoutMs: 1000 });
     const app = makeApp(db, own);
     const agent = request.agent(app);

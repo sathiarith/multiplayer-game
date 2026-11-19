@@ -1,10 +1,10 @@
 import { test, expect } from "vitest";
-import { openDb } from "./db.js";
+import { openTestDb } from "./pg/test-db.js";
 import { level } from "./level.js";
 import { createStartingPlayer } from "../shared/startingPlayer.js";
 import { LOOT, parsePickup } from "./loot.js";
 
-test("every item lies on a floor tile of the shared map", () => {
+test("every item lies on a floor tile of the shared map", async () => {
   for (const spawn of LOOT.spawns) {
     const x = (spawn.col + 0.5) * level.tileSize;
     const y = (spawn.row + 0.5) * level.tileSize;
@@ -17,17 +17,14 @@ test("every item lies on a floor tile of the shared map", () => {
   }
 });
 
-test("every item on the map is defined in the items table", () => {
-  const db = openDb(":memory:");
-  const codes = db
-    .prepare("SELECT code FROM items")
-    .all()
-    .map((r) => r.code);
-  db.close();
+test("every item on the map is defined in the items table", async () => {
+  const db = await openTestDb();
+  const codes = (await db.query("SELECT code FROM items")).map((r) => r.code);
+  await db.close();
   for (const spawn of LOOT.spawns) expect(codes).toContain(spawn.item);
 });
 
-test("a pickup request is exactly { id } with a positive whole number", () => {
+test("a pickup request is exactly { id } with a positive whole number", async () => {
   expect(parsePickup({ id: 3 })).toBe(3);
   for (const raw of [
     null,

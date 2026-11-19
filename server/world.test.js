@@ -33,7 +33,7 @@ const steps = (world, n) => {
   for (let i = 0; i < n; i++) world.step();
 };
 
-test("a player starts where the character was saved", () => {
+test("a player starts where the character was saved", async () => {
   const world = createWorld(room);
   world.add(aria);
   expect(player(world, 1)).toEqual({
@@ -49,13 +49,13 @@ test("a player starts where the character was saved", () => {
   });
 });
 
-test("a saved position inside a wall starts at the spawn point", () => {
+test("a saved position inside a wall starts at the spawn point", async () => {
   const world = createWorld(room);
   world.add({ ...aria, x: 5, y: 5 });
   expect(player(world, 1)).toMatchObject({ x: 60, y: 60 });
 });
 
-test("holding a key moves the player at the shared speed", () => {
+test("holding a key moves the player at the shared speed", async () => {
   const world = createWorld(room);
   world.add(aria);
   expect(world.setInput(1, hold(1, { right: true }))).toBe(true);
@@ -64,7 +64,7 @@ test("holding a key moves the player at the shared speed", () => {
   expect(player(world, 1).y).toBe(100);
 });
 
-test("walls stop the player on the server", () => {
+test("walls stop the player on the server", async () => {
   const world = createWorld(room);
   world.add(aria);
   world.setInput(1, hold(1, { right: true }));
@@ -74,7 +74,7 @@ test("walls stop the player on the server", () => {
   expect(x).toBeLessThanOrEqual(228); // the right wall starts at 240, half a player is 12
 });
 
-test("diagonal movement is not faster than straight movement", () => {
+test("diagonal movement is not faster than straight movement", async () => {
   const world = createWorld(room);
   world.add(aria);
   world.setInput(1, hold(1, { up: true, right: true }));
@@ -83,7 +83,7 @@ test("diagonal movement is not faster than straight movement", () => {
   expect(Math.hypot(x - 100, y - 100)).toBeCloseTo(40, 1);
 });
 
-test("an input that is not newer than the last one is ignored", () => {
+test("an input that is not newer than the last one is ignored", async () => {
   const world = createWorld(room);
   world.add(aria);
   expect(world.setInput(1, hold(5, { right: true }))).toBe(true);
@@ -94,7 +94,7 @@ test("an input that is not newer than the last one is ignored", () => {
   expect(player(world, 1).ack).toBe(6);
 });
 
-test("malformed input is refused", () => {
+test("malformed input is refused", async () => {
   const world = createWorld(room);
   world.add(aria);
   const bad = [
@@ -121,12 +121,12 @@ test("malformed input is refused", () => {
   expect(parseInput(hold(7, { up: true }))).toEqual(hold(7, { up: true }));
 });
 
-test("input for a player who is not in the world is ignored", () => {
+test("input for a player who is not in the world is ignored", async () => {
   const world = createWorld(room);
   expect(world.setInput(99, hold(1))).toBe(false);
 });
 
-test("a player who stops sending input stops moving", () => {
+test("a player who stops sending input stops moving", async () => {
   const world = createWorld(hall);
   world.add(aria);
   world.setInput(1, hold(1, { right: true }));
@@ -137,7 +137,7 @@ test("a player who stops sending input stops moving", () => {
   expect(player(world, 1).x).toBe(x); // then released
 });
 
-test("refreshed input keeps the player moving", () => {
+test("refreshed input keeps the player moving", async () => {
   const world = createWorld(hall);
   world.add(aria);
   for (let seq = 1; seq <= 3; seq++) {
@@ -147,7 +147,7 @@ test("refreshed input keeps the player moving", () => {
   expect(player(world, 1).x).toBeGreaterThan(100 + 10 * STALE_AFTER_TICKS);
 });
 
-test("re-adding a player keeps the position and restarts the input sequence", () => {
+test("re-adding a player keeps the position and restarts the input sequence", async () => {
   const world = createWorld(room);
   world.add(aria);
   world.setInput(1, hold(7, { right: true }));
@@ -161,7 +161,7 @@ test("re-adding a player keeps the position and restarts the input sequence", ()
   expect(world.setInput(1, hold(1, { right: true }))).toBe(true); // seq 1 is valid again
 });
 
-test("players move independently, and removing one leaves the other", () => {
+test("players move independently, and removing one leaves the other", async () => {
   const world = createWorld(room);
   world.add(aria);
   world.add(borin);
@@ -176,7 +176,7 @@ test("players move independently, and removing one leaves the other", () => {
   expect(world.snapshot().players.map((p) => p.id)).toEqual([2]);
 });
 
-test("a snapshot is compact, rounded, and carries the tick", () => {
+test("a snapshot is compact, rounded, and carries the tick", async () => {
   const world = createWorld(room);
   world.add(aria);
   world.setInput(1, hold(1, { up: true, right: true }));
@@ -199,7 +199,7 @@ test("a snapshot is compact, rounded, and carries the tick", () => {
   expect(Number(p.y.toFixed(2))).toBe(p.y);
 });
 
-test("get returns the exact saved fields, and nothing for an unknown player", () => {
+test("get returns the exact saved fields, and nothing for an unknown player", async () => {
   const world = createWorld(room);
   world.add(aria);
   world.setInput(1, hold(1, { up: true, right: true }));
@@ -212,7 +212,7 @@ test("get returns the exact saved fields, and nothing for an unknown player", ()
   expect(world.get(99)).toBeUndefined();
 });
 
-test("ids lists everyone in the world", () => {
+test("ids lists everyone in the world", async () => {
   const world = createWorld(room);
   world.add(aria);
   world.add(borin);
@@ -221,7 +221,7 @@ test("ids lists everyone in the world", () => {
   expect(world.ids()).toEqual([2]);
 });
 
-test("a character's score starts from what was saved", () => {
+test("a character's score starts from what was saved", async () => {
   const world = createWorld(room);
   world.add({ ...aria, score: 7 });
   expect(world.get(1).score).toBe(7);
@@ -232,7 +232,7 @@ const loot = [
   { item: "wood", col: 5, row: 2 }, // center (220, 100), 120 px away
 ];
 
-test("items lie at the center of their tiles and appear in the snapshot", () => {
+test("items lie at the center of their tiles and appear in the snapshot", async () => {
   const world = createWorld(room, { spawns: loot });
   expect(world.snapshot().items).toEqual([
     { id: 1, item: "gold_coin", x: 100, y: 100 },
@@ -240,14 +240,14 @@ test("items lie at the center of their tiles and appear in the snapshot", () => 
   ]);
 });
 
-test("an item within reach may be picked up, and one too far may not", () => {
+test("an item within reach may be picked up, and one too far may not", async () => {
   const world = createWorld(room, { spawns: loot });
   world.add(aria);
   expect(world.checkPickup(1, 1, 48)).toEqual({ ok: true, item: "gold_coin" });
   expect(world.checkPickup(1, 2, 48)).toEqual({ ok: false, reason: "too_far" });
 });
 
-test("a taken item is gone for everyone until it comes back", () => {
+test("a taken item is gone for everyone until it comes back", async () => {
   const world = createWorld(room, { spawns: loot, respawnTicks: 3 });
   world.add(aria);
   world.add(borin);
@@ -262,14 +262,14 @@ test("a taken item is gone for everyone until it comes back", () => {
   expect(world.snapshot().items.map((i) => i.id)).toEqual([1, 2]);
 });
 
-test("an unknown item, or a player not in the world, gets 'gone'", () => {
+test("an unknown item, or a player not in the world, gets 'gone'", async () => {
   const world = createWorld(room, { spawns: loot });
   world.add(aria);
   expect(world.checkPickup(1, 99, 48)).toEqual({ ok: false, reason: "gone" });
   expect(world.checkPickup(42, 1, 48)).toEqual({ ok: false, reason: "gone" });
 });
 
-test("a world without loot has no items", () => {
+test("a world without loot has no items", async () => {
   expect(createWorld(room).snapshot().items).toEqual([]);
 });
 
@@ -294,7 +294,7 @@ const arena = (types, col = 3) =>
     levels: LEVELS,
   });
 
-test("monsters appear in the snapshot with their health and facing", () => {
+test("monsters appear in the snapshot with their health and facing", async () => {
   const world = arena({ dummy });
   expect(world.snapshot().monsters).toEqual([
     {
@@ -310,14 +310,14 @@ test("monsters appear in the snapshot with their health and facing", () => {
   ]);
 });
 
-test("an attack hits the nearest monster within reach, for the player's damage", () => {
+test("an attack hits the nearest monster within reach, for the player's damage", async () => {
   const world = arena({ dummy });
   world.add(aria);
   expect(world.attack(1)).toEqual({ ok: true, monster: 1, killed: false });
   expect(world.snapshot().monsters[0].hp).toBe(20);
 });
 
-test("attacks wait for the cooldown, measured in world time", () => {
+test("attacks wait for the cooldown, measured in world time", async () => {
   const world = arena({ dummy });
   world.add(aria);
   world.attack(1);
@@ -328,14 +328,14 @@ test("attacks wait for the cooldown, measured in world time", () => {
   expect(world.attack(1).ok).toBe(true);
 });
 
-test("with nothing in reach the attack is refused, and the cooldown is not used", () => {
+test("with nothing in reach the attack is refused, and the cooldown is not used", async () => {
   const world = arena({ dummy }, 5); // 120 px away
   world.add(aria);
   expect(world.attack(1)).toEqual({ ok: false, reason: "no_target" });
   expect(world.attack(1)).toEqual({ ok: false, reason: "no_target" }); // not "cooldown"
 });
 
-test("a kill gives XP and score, can level up and heal, and the monster comes back later", () => {
+test("a kill gives XP and score, can level up and heal, and the monster comes back later", async () => {
   const world = arena({ dummy });
   world.add(aria);
   world.attack(1);
@@ -359,7 +359,7 @@ test("a kill gives XP and score, can level up and heal, and the monster comes ba
   expect(world.snapshot().monsters[0]).toMatchObject({ hp: 30 });
 });
 
-test("a monster strikes a player within reach on its own cooldown, facing them", () => {
+test("a monster strikes a player within reach on its own cooldown, facing them", async () => {
   const world = arena({ dummy });
   world.add(aria);
 
@@ -378,7 +378,7 @@ test("a monster strikes a player within reach on its own cooldown, facing them",
   expect(player(world, 1).hp).toBe(84);
 });
 
-test("a player who dies returns to the spawn point with full health, keeping level and XP", () => {
+test("a player who dies returns to the spawn point with full health, keeping level and XP", async () => {
   const world = arena({ ogre });
   world.add({ ...aria, level: 2, xp: 60, hp: 120 });
 
@@ -389,14 +389,14 @@ test("a player who dies returns to the spawn point with full health, keeping lev
   expect(world.get(1)).toMatchObject({ level: 2, xp: 60 });
 });
 
-test("a saved level and XP come back, with that level's health", () => {
+test("a saved level and XP come back, with that level's health", async () => {
   const world = arena({ dummy }, 5);
   world.add({ ...aria, level: 2, xp: 60, hp: 120 });
   expect(player(world, 1)).toMatchObject({ level: 2, hp: 120, maxHp: 120 });
   expect(world.get(1)).toMatchObject({ level: 2, xp: 60 });
 });
 
-test("re-adding a player keeps the progress made so far", () => {
+test("re-adding a player keeps the progress made so far", async () => {
   const world = arena({ dummy });
   world.add(aria);
   for (let i = 0; i < 3; i++) {
@@ -407,7 +407,7 @@ test("re-adding a player keeps the progress made so far", () => {
   expect(world.get(1)).toMatchObject({ level: 2, xp: 60, score: 60 });
 });
 
-test("walking no longer earns score", () => {
+test("walking no longer earns score", async () => {
   const world = createWorld(hall);
   world.add(aria);
   world.setInput(1, hold(1, { right: true }));
@@ -415,7 +415,7 @@ test("walking no longer earns score", () => {
   expect(world.get(1).score).toBe(0);
 });
 
-test("an accepted attack shows as a strike in the player's snapshot, for a moment", () => {
+test("an accepted attack shows as a strike in the player's snapshot, for a moment", async () => {
   const world = arena({ dummy });
   world.add(aria);
   expect(player(world, 1).attacking).toBe(false);
@@ -427,14 +427,14 @@ test("an accepted attack shows as a strike in the player's snapshot, for a momen
   expect(player(world, 1).attacking).toBe(false);
 });
 
-test("a refused attack shows no strike", () => {
+test("a refused attack shows no strike", async () => {
   const world = arena({ dummy }, 5); // nothing in reach
   world.add(aria);
   world.attack(1);
   expect(player(world, 1).attacking).toBe(false);
 });
 
-test("a taken item can be put back at once", () => {
+test("a taken item can be put back at once", async () => {
   const world = createWorld(room, { spawns: loot });
   world.take(1);
   world.restore(1);

@@ -10,13 +10,13 @@ import {
 let app;
 let db;
 let lines;
-beforeEach(() => {
+beforeEach(async () => {
   const capture = createLogCapture();
   lines = capture.lines;
-  ({ app, db } = createTestApp({ logger: capture.logger }));
+  ({ app, db } = await createTestApp({ logger: capture.logger }));
 });
-afterEach(() => {
-  if (db.open) db.close();
+afterEach(async () => {
+  if (db.open) await db.close();
 });
 
 // pino-http writes its line when the response finishes, so wait for it.
@@ -96,7 +96,7 @@ test("/health reports status and uptime, creates no session, and is not logged",
 });
 
 test("/health answers 503 and logs an error when the database is unusable", async () => {
-  db.close();
+  await db.close();
   const res = await request(app).get("/health");
   expect(res.status).toBe(503);
   expect(res.body.status).toBe("unavailable");
@@ -111,10 +111,10 @@ test("/health answers 503 and logs an error when the database is unusable", asyn
 
 test("an unexpected error is logged with its request id and message; the client sees neither", async () => {
   const agent = await loggedInAgent(app, "alice");
-  db.exec("DROP TABLE characters"); // the session and user still work
+  await db.run("DROP TABLE characters CASCADE"); // the session and user still work
   const res = await agent.post("/api/characters").send({ name: "Aria" });
   expect(res.status).toBe(500);
-  expect(res.text).not.toMatch(/no such table/);
+  expect(res.text).not.toMatch(/no such table|does not exist/);
 
   const line = await vi.waitFor(() => {
     const l = lines.find((x) => x.err);
@@ -122,7 +122,7 @@ test("an unexpected error is logged with its request id and message; the client 
     return l;
   });
   expect(line.level).toBe(50);
-  expect(line.err.message).toMatch(/no such table/);
+  expect(line.err.message).toMatch(/does not exist/);
   expect(line.req.id).toBe(res.headers["x-request-id"]);
   expect(line.req.headers.cookie).toBe("[redacted]");
 });

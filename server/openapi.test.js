@@ -14,12 +14,12 @@ const errorCodes = spec.components.schemas.ErrorCode.enum;
 const METHODS = ["get", "post", "put", "patch", "delete"];
 
 const opened = [];
-function make(options) {
-  const t = createTestApp(options);
+async function make(options) {
+  const t = await createTestApp(options);
   opened.push(t.db);
   return t.app;
 }
-afterEach(() => {
+afterEach(async () => {
   while (opened.length) opened.pop().close();
 });
 
@@ -69,12 +69,12 @@ test("the spec is a valid OpenAPI document", async () => {
   ).resolves.toBeDefined();
 });
 
-test("the spec lists exactly the routes the app implements", () => {
-  expect(documentedRoutes()).toEqual(implementedRoutes(make()));
+test("the spec lists exactly the routes the app implements", async () => {
+  expect(documentedRoutes()).toEqual(implementedRoutes(await make()));
 });
 
 test("every documented route exists", async () => {
-  const app = make();
+  const app = await make();
   for (const route of documentedRoutes()) {
     const [method, path] = route.split(" ");
     const res = await request(app)[method](path.replace("{id}", "1"));
@@ -88,7 +88,7 @@ test("every documented route exists", async () => {
 });
 
 test("responses seen in practice are all documented", async () => {
-  const app = make();
+  const app = await make();
   const anon = request(app);
 
   seen(await anon.get("/health"), 200, "get", "/health");
@@ -180,7 +180,9 @@ test("responses seen in practice are all documented", async () => {
 });
 
 test("the rate limit response is documented, with its Retry-After header", async () => {
-  const app = make({ rateLimits: { login: { limit: 1, windowMs: 60_000 } } });
+  const app = await make({
+    rateLimits: { login: { limit: 1, windowMs: 60_000 } },
+  });
   const wrong = { ...ALICE, password: "definitely-not-it" };
   seen(
     await request(app).post("/api/login").send(wrong),

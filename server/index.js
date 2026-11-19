@@ -5,7 +5,7 @@ import { RedisStore as RateLimitStore } from "rate-limit-redis";
 import { createAdapter } from "@socket.io/redis-adapter";
 import { loadConfig } from "./config.js";
 import { createLogger } from "./logger.js";
-import { openDb } from "./db.js";
+import { openDatabase } from "./db.js";
 import { connectRedis } from "./redis.js";
 import { createLeaderboard } from "./leaderboard.js";
 import { createApp } from "./app.js";
@@ -20,7 +20,13 @@ if (!sessionSecret) {
   logger.warn("SESSION_SECRET is not set: using a random one for this run");
 }
 
-const db = openDb(config.dbPath);
+let db;
+try {
+  db = await openDatabase(config.databaseUrl, { logger });
+} catch (err) {
+  logger.fatal({ message: err.message }, "cannot start without the database");
+  process.exit(1);
+}
 
 // With REDIS_URL set, sessions live in Redis and survive a restart.
 // Without it, express-session keeps them in memory.
@@ -109,6 +115,7 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
     setTimeout(() => process.exit(1), 5000).unref(); // do not hang forever
     io.close(async () => {
       await app.locals.flushSaves?.(); // the saves each disconnect just started
+      await db.close();
       await Promise.all(
         [redis, ...adapterClients].map((client) => client?.close()),
       );

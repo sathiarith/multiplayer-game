@@ -5,10 +5,10 @@ import { createApp } from "./app.js";
 
 let app;
 let db;
-beforeEach(() => {
-  ({ app, db } = createTestApp());
+beforeEach(async () => {
+  ({ app, db } = await createTestApp());
 });
-afterEach(() => db.close());
+afterEach(async () => db.close());
 
 const register = (body) => request(app).post("/api/register").send(body);
 
@@ -21,9 +21,10 @@ test("registers a user and never returns the hash", async () => {
 
 test("stores a bcrypt hash, not the password", async () => {
   await register(ALICE);
-  const row = db
-    .prepare("SELECT password_hash FROM users WHERE username = ?")
-    .get("alice");
+  const row = await db.one(
+    "SELECT password_hash FROM users WHERE username = $1",
+    ["alice"],
+  );
   expect(row.password_hash).toMatch(/^\$2[aby]\$/);
   expect(row.password_hash).not.toContain(ALICE.password);
 });
@@ -44,14 +45,14 @@ test("invalid input returns 400 with field messages", async () => {
 
 test("an unexpected database failure during registration returns a generic 500", async () => {
   const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-  db.exec("DROP TABLE users"); // simulate a broken database
+  await db.run("DROP TABLE users CASCADE"); // simulate a broken database
   const res = await register(ALICE);
   expect(res.status).toBe(500);
   expect(res.body.error.code).toBe("internal_error");
   spy.mockRestore();
 });
 
-test("createApp refuses to start without a session secret", () => {
+test("createApp refuses to start without a session secret", async () => {
   expect(() => createApp(db)).toThrow(/sessionSecret/);
   expect(() => createApp(db, { sessionSecret: "" })).toThrow(/sessionSecret/);
 });

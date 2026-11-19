@@ -1,5 +1,5 @@
-import { test, expect, beforeEach } from "vitest";
-import { openDb } from "./db.js";
+import { test, expect, beforeEach, afterEach } from "vitest";
+import { openTestDb } from "./pg/test-db.js";
 import { createUser } from "./users.js";
 import {
   createCharacter,
@@ -17,10 +17,12 @@ let alice;
 let bob;
 
 beforeEach(async () => {
-  db = openDb(":memory:");
+  db = await openTestDb();
   alice = await createUser(db, "alice", "hash");
   bob = await createUser(db, "bob", "hash");
 });
+
+afterEach(() => db.close());
 
 test("a new character starts at the spawn point with default stats", async () => {
   const c = await createCharacter(db, alice.id, "Aria");
@@ -67,7 +69,7 @@ test("the database refuses a character for a user that does not exist", async ()
 
 test("deleting a user deletes their characters", async () => {
   await createCharacter(db, alice.id, "Aria");
-  db.prepare("DELETE FROM users WHERE id = ?").run(alice.id);
+  await db.run("DELETE FROM users WHERE id = $1", [alice.id]);
   expect(await listCharacters(db, alice.id)).toEqual([]);
 });
 

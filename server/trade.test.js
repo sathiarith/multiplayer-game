@@ -1,5 +1,5 @@
 import { test, expect, beforeEach, afterEach } from "vitest";
-import { openDb } from "./db.js";
+import { openTestDb } from "./pg/test-db.js";
 import { createUser } from "./users.js";
 import { createCharacter } from "./characters.js";
 import { addItem, listInventory, MAX_STACK } from "./inventory.js";
@@ -11,7 +11,7 @@ let borin;
 let cara;
 
 beforeEach(async () => {
-  db = openDb(":memory:");
+  db = await openTestDb();
   const make = async (user, name) =>
     createCharacter(db, (await createUser(db, user, "hash")).id, name);
   aria = await make("alice", "Aria");
@@ -23,14 +23,15 @@ afterEach(() => db.close());
 const count = async (character, code) =>
   (await listInventory(db, character.id)).find((i) => i.code === code)
     ?.quantity ?? 0;
-const total = (code) =>
-  db
-    .prepare(
-      `SELECT COALESCE(SUM(inventory.quantity), 0) AS n
+const total = async (code) =>
+  (
+    await db.one(
+      `SELECT CAST(COALESCE(SUM(inventory.quantity), 0) AS integer) AS n
          FROM inventory JOIN items ON items.id = inventory.item_id
-        WHERE items.code = ?`,
+        WHERE items.code = $1`,
+      [code],
     )
-    .get(code).n;
+  ).n;
 const lines = (...pairs) =>
   pairs.map(([code, quantity]) => ({ code, quantity }));
 
@@ -49,7 +50,7 @@ test("the same coins offered twice can only be traded once", async () => {
 
   expect(first).toEqual({ ok: true });
   expect(second).toEqual({ ok: false, reason: "missing_items" });
-  expect(total("gold_coin")).toBe(3); // no coin was created
+  expect(await total("gold_coin")).toBe(3); // no coin was created
   expect([
     await count(aria, "gold_coin"),
     await count(borin, "gold_coin"),
@@ -60,13 +61,18 @@ test("the same coins offered twice can only be traded once", async () => {
 test("a failure halfway through undoes everything", async () => {
   await addItem(db, aria.id, "gold_coin", 3);
   await addItem(db, borin.id, "wood", 2);
-  const woodId = db
-    .prepare("SELECT id FROM items WHERE code = 'wood'")
-    .get().id;
+  const woodId = (await db.one("SELECT id FROM items WHERE code = 'wood'")).id;
   // Fails when Aria receives the wood: the last move, after the gold has already moved.
-  db.exec(`CREATE TRIGGER forced_failure BEFORE INSERT ON inventory
-           WHEN NEW.character_id = ${aria.id} AND NEW.item_id = ${woodId}
-           BEGIN SELECT RAISE(ABORT, 'forced failure halfway'); END`);
+  // In Postgres a trigger calls a function, written in PL/pgSQL.
+  await db.run(`CREATE FUNCTION forced_failure() RETURNS trigger AS $$
+    BEGIN
+      IF NEW.character_id = ${aria.id} AND NEW.item_id = ${woodId} THEN
+        RAISE EXCEPTION 'forced failure halfway';
+      END IF;
+      RETURN NEW;
+    END $$ LANGUAGE plpgsql`);
+  await db.run(`CREATE TRIGGER forced_failure BEFORE INSERT ON inventory
+    FOR EACH ROW EXECUTE FUNCTION forced_failure()`);
 
   await expect(
     executeTrade(db, {

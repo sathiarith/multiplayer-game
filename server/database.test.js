@@ -1,9 +1,9 @@
 import { test, expect, beforeEach, afterEach } from "vitest";
-import { openDb } from "./db.js";
+import { openTestDb } from "./pg/test-db.js";
 
 let db;
-beforeEach(() => {
-  db = openDb(":memory:");
+beforeEach(async () => {
+  db = await openTestDb();
 });
 afterEach(() => db.close());
 
@@ -15,19 +15,12 @@ const addUser = (name) =>
 const count = async () =>
   (await db.one("SELECT CAST(COUNT(*) AS integer) AS n FROM users")).n;
 
-test("$1, $2 ... are bound in order, and any other order is refused", async () => {
-  expect(await db.one("SELECT $1 + $2 AS total", [2, 3])).toEqual({ total: 5 });
-  await expect(db.query("SELECT $2 AS a, $1 AS b", [1, 2])).rejects.toThrow(
-    /in order/,
-  );
-});
-
 test("query returns every row, and one the first row or undefined", async () => {
   await addUser("alice");
   await addUser("bobby");
   expect(
-    (await db.query("SELECT username FROM users ORDER BY username")).length,
-  ).toBe(2);
+    await db.query("SELECT username FROM users ORDER BY username"),
+  ).toHaveLength(2);
   expect(
     await db.one("SELECT username FROM users WHERE username = $1", ["nobody"]),
   ).toBeUndefined();
@@ -83,9 +76,28 @@ test("a transaction inside a transaction joins it, so a failure undoes both", as
   expect(await count()).toBe(0);
 });
 
+test("a transaction has its own connection: others see its work only after the commit", async () => {
+  let seenFromOutside;
+  await db.transaction(async (tx) => {
+    await tx.run(
+      "INSERT INTO users (username, password_hash) VALUES ($1, 'x')",
+      ["alice"],
+    );
+    seenFromOutside = await count(); // through the pool: a different connection
+  });
+  expect(seenFromOutside).toBe(0);
+  expect(await count()).toBe(1);
+});
+
 test("a unique violation is recognised as one", async () => {
   await addUser("alice");
-  const err = await addUser("ALICE").catch((e) => e); // the column is case-insensitive
+  const err = await addUser("ALICE").catch((e) => e); // the index ignores case
   expect(db.isUniqueViolation(err)).toBe(true);
   expect(db.isUniqueViolation(new Error("something else"))).toBe(false);
+});
+
+test("closing twice is harmless", async () => {
+  await db.close();
+  await db.close();
+  expect(db.open).toBe(false);
 });

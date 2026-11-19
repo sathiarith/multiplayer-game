@@ -4,7 +4,7 @@ import { createOffers, parseOffer, parseTradeId } from "./offers.js";
 const gold = (quantity) => ({ code: "gold_coin", quantity });
 const valid = { to: 2, give: [gold(1)], want: [] };
 
-test("a well-formed offer is accepted, with a gift or a swap", () => {
+test("a well-formed offer is accepted, with a gift or a swap", async () => {
   expect(parseOffer(valid, { maxLines: 4 })).toEqual(valid);
   const swap = {
     to: 2,
@@ -14,7 +14,7 @@ test("a well-formed offer is accepted, with a gift or a swap", () => {
   expect(parseOffer(swap, { maxLines: 4 })).toEqual(swap);
 });
 
-test("anything else is malformed", () => {
+test("anything else is malformed", async () => {
   const bad = [
     null,
     "offer",
@@ -40,7 +40,7 @@ test("anything else is malformed", () => {
     expect(parseOffer(raw, { maxLines: 4 }), JSON.stringify(raw)).toBeNull();
 });
 
-test("an answer names an offer by its id, and nothing else", () => {
+test("an answer names an offer by its id, and nothing else", async () => {
   const id = "123e4567-e89b-12d3-a456-426614174000";
   expect(parseTradeId({ id })).toBe(id);
   for (const raw of [
@@ -68,7 +68,7 @@ function setup() {
 }
 const offer = (from, to) => ({ from, to, give: [gold(1)], want: [] });
 
-test("an offer can be found until it is removed", () => {
+test("an offer can be found until it is removed", async () => {
   const { offers } = setup();
   const created = offers.create(offer(1, 2));
   expect(created.ok).toBe(true);
@@ -78,7 +78,7 @@ test("an offer can be found until it is removed", () => {
   expect(offers.get(created.offer.id)).toBeUndefined();
 });
 
-test("an offer expires", () => {
+test("an offer expires", async () => {
   const { offers, advance } = setup();
   const { offer: made } = offers.create(offer(1, 2));
   advance(999);
@@ -87,7 +87,7 @@ test("an offer expires", () => {
   expect(offers.get(made.id)).toBeUndefined();
 });
 
-test("a player may only have so many open offers, and expired ones do not count", () => {
+test("a player may only have so many open offers, and expired ones do not count", async () => {
   const { offers, advance } = setup();
   offers.create(offer(1, 2));
   offers.create(offer(1, 3));
@@ -101,7 +101,7 @@ test("a player may only have so many open offers, and expired ones do not count"
   expect(offers.create(offer(1, 4)).ok).toBe(true);
 });
 
-test("a player who leaves takes every offer they are part of", () => {
+test("a player who leaves takes every offer they are part of", async () => {
   const { offers } = setup();
   const a = offers.create(offer(1, 2)).offer;
   const b = offers.create(offer(3, 1)).offer;

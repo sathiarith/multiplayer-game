@@ -1,18 +1,20 @@
 import { test, expect } from "vitest";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { openDb } from "./db.js";
+import { openDatabase } from "./db.js";
+import { createTestDatabase } from "./pg/test-db.js";
 
-test("openDb creates missing folders and the database file", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mmo-db-"));
-  const file = path.join(dir, "nested", "game.db");
-  const db = openDb(file);
+test("openDatabase migrates an empty database and answers queries", async () => {
+  const database = await createTestDatabase(); // empty: not a copy of the template
+  const db = await openDatabase(database.url);
   try {
-    expect(fs.existsSync(file)).toBe(true);
-    expect(db.pragma("user_version", { simple: true })).toBeGreaterThan(0);
+    const versions = await db.query(
+      "SELECT version FROM schema_migrations ORDER BY version",
+    );
+    expect(versions.map((r) => r.version)).toEqual([1, 2, 3, 4, 5]);
+    expect(
+      await db.one("SELECT CAST(COUNT(*) AS integer) AS n FROM items"),
+    ).toEqual({ n: 3 });
   } finally {
-    db.close(); // Windows cannot delete a file that is still open
-    fs.rmSync(dir, { recursive: true, force: true });
+    await db.close();
+    await database.drop();
   }
 });
