@@ -5,7 +5,7 @@ import { pgDatabase } from "../database.js";
 // The server's maintenance database, used only to create and drop test databases.
 export const ADMIN_URL =
   process.env.TEST_PG_URL ??
-  "postgres://game:game-dev-only@127.0.0.1:5432/postgres";
+  "postgres://game:game-dev-only@127.0.0.1:5433/postgres";
 // Migrated once per run; every test database is a copy of it.
 export const TEMPLATE = "game_test_template";
 
@@ -54,9 +54,9 @@ export async function createTestDatabase({ template } = {}) {
 }
 
 // A fresh, migrated database for one test. Closing it also drops it.
-export async function openTestDb() {
+export async function openTestDb({ max = 4 } = {}) {
   const database = await createTestDatabase({ template: TEMPLATE });
-  const pool = new pg.Pool({ connectionString: database.url, max: 4 });
+  const pool = new pg.Pool({ connectionString: database.url, max });
   pool.on("error", () => {});
   const db = pgDatabase(pool);
   const closePool = db.close;

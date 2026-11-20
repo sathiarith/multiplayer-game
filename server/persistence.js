@@ -14,6 +14,7 @@ export function createPersistence({
 }) {
   const lastWritten = new Map(); // character id -> what was last written, as text
   const pending = new Set(); // writes still in flight, so a shutdown can wait for them
+  const inFlight = new Map(); // character id -> the write in progress for it
   const fingerprint = (s) =>
     `${s.x}|${s.y}|${s.hp}|${s.score}|${s.level}|${s.xp}`;
   let timer = null;
@@ -35,6 +36,8 @@ export function createPersistence({
   // Writes one character if it changed. Resolves to true if a row was written.
   // The state and the owner are read NOW, before anything waits: a player who
   // leaves is removed from the online list right after this call.
+  // Writes for one character run one at a time, in order, so an older state
+  // can never land after a newer one, and an unchanged one is not written twice.
   function save(id) {
     const state = world.get(id);
     const userId = ownerOf(id);
@@ -43,7 +46,9 @@ export function createPersistence({
     const print = fingerprint(state);
     if (lastWritten.get(id) === print) return Promise.resolve(false); // nothing new to write
 
-    const write = (async () => {
+    const previous = inFlight.get(id) ?? Promise.resolve();
+    const write = previous.then(async () => {
+      if (lastWritten.get(id) === print) return false; // the write before this one saved it already
       try {
         const written = await saveCharacterState(db, userId, id, state);
         if (written) {
@@ -56,9 +61,14 @@ export function createPersistence({
         logger.error({ err, characterId: id }, "could not save character");
         return false;
       }
-    })();
+    });
+
+    inFlight.set(id, write);
     pending.add(write);
-    write.finally(() => pending.delete(write));
+    write.finally(() => {
+      pending.delete(write);
+      if (inFlight.get(id) === write) inFlight.delete(id);
+    });
     return write;
   }
 

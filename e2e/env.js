@@ -10,4 +10,4 @@ export const CLIENT_URL = `http://127.0.0.1:${CLIENT_PORT}`;
 export const REDIS_URL = "redis://127.0.0.1:6379/15";
 // Its own database, recreated at the start of every run, so tests never touch development data.
 export const DATABASE_URL =
-  "postgres://game:game-dev-only@127.0.0.1:5432/game_e2e";
+  "postgres://game:game-dev-only@127.0.0.1:5433/game_e2e";
