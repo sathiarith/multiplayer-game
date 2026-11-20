@@ -28,6 +28,9 @@ export async function createCharacter(
   try {
     // Count and insert as one unit, so the limit holds.
     return await db.transaction(async (tx) => {
+      // Lock this player's row first. Another create for the same player waits
+      // here until this transaction ends, then counts again: the limit holds.
+      await tx.run("SELECT id FROM users WHERE id = $1 FOR UPDATE", [userId]);
       const { n } = await tx.one(
         "SELECT CAST(COUNT(*) AS integer) AS n FROM characters WHERE user_id = $1",
         [userId],

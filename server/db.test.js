@@ -9,7 +9,7 @@ test("openDatabase migrates an empty database and answers queries", async () => 
     const versions = await db.query(
       "SELECT version FROM schema_migrations ORDER BY version",
     );
-    expect(versions.map((r) => r.version)).toEqual([1, 2, 3, 4, 5]);
+    expect(versions.map((r) => r.version)).toEqual([1, 2, 3, 4, 5, 6]);
     expect(
       await db.one("SELECT CAST(COUNT(*) AS integer) AS n FROM items"),
     ).toEqual({ n: 3 });

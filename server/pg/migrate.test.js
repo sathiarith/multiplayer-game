@@ -14,13 +14,14 @@ import { probePostgres, createTestDatabase } from "./test-db.js";
 const MIGRATIONS = readMigrations();
 
 test("every migration has an up and a down, numbered 1, 2, 3... without gaps", () => {
-  expect(MIGRATIONS.map((m) => m.version)).toEqual([1, 2, 3, 4, 5]);
+  expect(MIGRATIONS.map((m) => m.version)).toEqual([1, 2, 3, 4, 5, 6]);
   expect(MIGRATIONS.map((m) => m.name)).toEqual([
     "users",
     "characters",
     "score",
     "inventory",
     "combat",
+    "leaderboard_index",
   ]);
   for (const m of MIGRATIONS) {
     expect(m.up.trim(), `${m.version} up`).not.toBe("");
@@ -80,7 +81,7 @@ describe.skipIf(!available)("PostgreSQL migrations", () => {
   });
 
   test("up applies every migration once, records it, and a second run does nothing", async () => {
-    expect(await migrateUp(client)).toEqual([1, 2, 3, 4, 5]);
+    expect(await migrateUp(client)).toEqual([1, 2, 3, 4, 5, 6]);
     expect(await tables()).toEqual([
       "characters",
       "inventory",
@@ -198,7 +199,7 @@ describe.skipIf(!available)("PostgreSQL migrations", () => {
     await other.connect();
     try {
       const [a, b] = await Promise.all([migrateUp(client), migrateUp(other)]);
-      expect([...a, ...b].sort()).toEqual([1, 2, 3, 4, 5]);
+      expect([...a, ...b].sort((x, y) => x - y)).toEqual(MIGRATIONS.map((m) => m.version));
     } finally {
       await other.end();
     }

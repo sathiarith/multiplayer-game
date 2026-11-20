@@ -11,7 +11,7 @@ export async function setup() {
     await admin.connect();
   } catch {
     throw new Error(
-      "PostgreSQL is not reachable for the tests. Is Docker running? Try: docker start game-postgres",
+      "PostgreSQL for tests is not reachable on port 5433. Is Docker running? Try: docker start game-postgres-test",
     );
   }
   try {

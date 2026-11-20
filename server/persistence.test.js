@@ -129,19 +129,23 @@ test("a database error is logged and does not escape", async () => {
 });
 
 test("start saves on a timer, and stop ends it", async () => {
-  vi.useFakeTimers();
+  // Only the save timer is faked: the database driver keeps its real timers.
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
   persistence.start();
   persistence.start(); // starting twice is harmless
   move(3);
 
   vi.advanceTimersByTime(999);
+  await persistence.drain();
   expect((await saved()).x).toBe(100);
   vi.advanceTimersByTime(1);
+  await persistence.drain(); // a write is a real round trip now: wait for it
   expect((await saved()).x).toBeCloseTo(130);
 
   persistence.stop();
   move(2);
   vi.advanceTimersByTime(5000);
+  await persistence.drain();
   expect((await saved()).x).toBeCloseTo(130); // no more saves
 });
 
@@ -231,4 +235,23 @@ test("an onSaved that throws at once is logged too", async () => {
 
   expect(await watching.save(aria.id)).toBe(true);
   expect(logger.error).toHaveBeenCalledTimes(1);
+});
+
+test("saves of one character never overlap: the newest state lands last, and is written once", async () => {
+  const realRun = db.run;
+  const delays = [80, 10, 10]; // the first write is the slowest
+  vi.spyOn(db, "run").mockImplementation(async (sql, params) => {
+    await new Promise((resolve) => setTimeout(resolve, delays.shift() ?? 0));
+    return realRun(sql, params);
+  });
+
+  move(1);
+  const first = persistence.save(aria.id); // x = 110, slow
+  move(1);
+  const second = persistence.save(aria.id); // x = 120
+  const third = persistence.save(aria.id); // still 120: nothing new
+  await Promise.all([first, second, third]);
+
+  expect((await saved()).x).toBeCloseTo(120); // the newer position, not the older one
+  expect(db.run).toHaveBeenCalledTimes(2); // 110, then 120: the repeat is skipped
 });
