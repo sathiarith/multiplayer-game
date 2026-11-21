@@ -199,7 +199,9 @@ describe.skipIf(!available)("PostgreSQL migrations", () => {
     await other.connect();
     try {
       const [a, b] = await Promise.all([migrateUp(client), migrateUp(other)]);
-      expect([...a, ...b].sort((x, y) => x - y)).toEqual(MIGRATIONS.map((m) => m.version));
+      expect([...a, ...b].sort((x, y) => x - y)).toEqual(
+        MIGRATIONS.map((m) => m.version),
+      );
     } finally {
       await other.end();
     }

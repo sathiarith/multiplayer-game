@@ -19,18 +19,21 @@ beforeEach(async () => {
 });
 afterEach(() => db.close());
 
-const many = (n, work) => Promise.allSettled(Array.from({ length: n }, (_, i) => work(i)));
+const many = (n, work) =>
+  Promise.allSettled(Array.from({ length: n }, (_, i) => work(i)));
 const ok = (results) => results.filter((r) => r.status === "fulfilled");
 const failed = (results) => results.filter((r) => r.status === "rejected");
 const quantity = async (character, code) =>
-  (await listInventory(db, character.id)).find((i) => i.code === code)?.quantity ?? 0;
+  (await listInventory(db, character.id)).find((i) => i.code === code)
+    ?.quantity ?? 0;
 const newCharacter = async (username, name) =>
   createCharacter(db, (await createUser(db, username, "hash")).id, name);
 
 test("the same coins traded to twenty players at once: exactly one trade happens", async () => {
   const aria = await newCharacter("alice", "Aria");
   const others = [];
-  for (let i = 0; i < 20; i++) others.push(await newCharacter(`user${i}`, `Hero${i}`));
+  for (let i = 0; i < 20; i++)
+    others.push(await newCharacter(`user${i}`, `Hero${i}`));
   await addItem(db, aria.id, "gold_coin", 3);
 
   const results = await Promise.all(
@@ -45,8 +48,12 @@ test("the same coins traded to twenty players at once: exactly one trade happens
   );
 
   expect(results.filter((r) => r.ok)).toHaveLength(1);
-  expect(results.filter((r) => !r.ok).every((r) => r.reason === "missing_items")).toBe(true);
-  const total = await db.one("SELECT CAST(COALESCE(SUM(quantity), 0) AS integer) AS n FROM inventory");
+  expect(
+    results.filter((r) => !r.ok).every((r) => r.reason === "missing_items"),
+  ).toBe(true);
+  const total = await db.one(
+    "SELECT CAST(COALESCE(SUM(quantity), 0) AS integer) AS n FROM inventory",
+  );
   expect(total.n).toBe(3); // not one coin created or lost
 });
 
@@ -72,10 +79,14 @@ test("a stack near the limit never goes past it, however many adds arrive at onc
 test("ten characters created at once for one player: only the limit's worth exist", async () => {
   const alice = await createUser(db, "alice", "hash");
 
-  const results = await many(10, (i) => createCharacter(db, alice.id, `Hero${i}`));
+  const results = await many(10, (i) =>
+    createCharacter(db, alice.id, `Hero${i}`),
+  );
 
   expect(ok(results)).toHaveLength(MAX_CHARACTERS);
-  expect(failed(results).every((r) => r.reason instanceof CharacterLimitError)).toBe(true);
+  expect(
+    failed(results).every((r) => r.reason instanceof CharacterLimitError),
+  ).toBe(true);
   expect(await listCharacters(db, alice.id)).toHaveLength(MAX_CHARACTERS);
 });
 

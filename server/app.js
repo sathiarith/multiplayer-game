@@ -117,6 +117,7 @@ export function createApp(
     allowedOrigins = [],
     sessionStore, // undefined means express-session's in-memory store
     healthChecks = [], // async functions that throw when a dependency is down
+    trustProxy = 0,
   } = {},
 ) {
   if (!sessionSecret) throw new Error("sessionSecret is required");
@@ -139,6 +140,9 @@ export function createApp(
   const dummyHash = bcrypt.hashSync("not-a-real-password", bcryptCost);
 
   const app = express();
+  // Behind nginx, the client's address arrives in X-Forwarded-For. Trust it
+  // only for the proxies we run, or rate limits could be dodged with a fake one.
+  app.set("trust proxy", trustProxy);
   app.use(helmet());
   app.use(
     pinoHttp({

@@ -91,6 +91,7 @@ const app = createApp(db, {
   allowedOrigins: config.allowedOrigins,
   docs: !config.production,
   logger,
+  trustProxy: config.trustProxy,
 });
 
 const httpServer = createServer(app);

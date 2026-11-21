@@ -51,7 +51,10 @@ try {
   await client.query("ANALYZE"); // fresh statistics, as the planner would have in production
 
   for (const [label, [sql, params]] of Object.entries(QUERIES)) {
-    const { rows } = await client.query(`EXPLAIN (ANALYZE, COSTS OFF) ${sql}`, params);
+    const { rows } = await client.query(
+      `EXPLAIN (ANALYZE, COSTS OFF) ${sql}`,
+      params,
+    );
     console.log(`\n== ${label}`);
     for (const row of rows) console.log(row["QUERY PLAN"]);
   }

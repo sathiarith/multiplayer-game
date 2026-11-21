@@ -1,0 +1,15 @@
+# What may enter the web image's build: client/ and shared/ only. The licensed
+# sprites are excluded, so vite build never copies them into the image.
+**
+!client/**
+!shared/**
+
+client/node_modules
+client/dist
+client/public/sprites
+client/Dockerfile
+client/Dockerfile.dockerignore
+
+**/*.test.js
+**/*.test.jsx
+client/src/test-utils.jsx
