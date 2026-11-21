@@ -1,0 +1,28 @@
+# What may enter the server image's build: server/ and shared/ only,
+# without tests, local data or secrets. Everything else is excluded first.
+**
+!server/**
+!shared/**
+!docs/openapi.yaml
+
+server/node_modules
+server/coverage
+server/.env
+server/.env.*
+!server/.env.example
+server/Dockerfile
+server/Dockerfile.dockerignore
+
+# The old SQLite database from before Sprint 8, if it is still on disk.
+# The rest of server/data (loot.json, monsters.json) is game data the server needs.
+server/data/*.db
+server/data/*.db-*
+
+**/*.test.js
+server/test-helpers.js
+server/realtime-test-helpers.js
+server/redis-test-helpers.js
+server/pg/test-db.js
+server/pg/global-setup.js
+server/scripts/try-*.js
+server/scripts/explain.js
