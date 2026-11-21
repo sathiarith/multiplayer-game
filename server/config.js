@@ -102,6 +102,13 @@ export function loadConfig(env = process.env) {
     );
   }
 
+  // How many proxies in front of the server to trust for the client's address
+  // (X-Forwarded-For). 0, the default, ignores the header, so it can't be faked.
+  const trustProxy = Number(env.TRUST_PROXY ?? 0);
+  if (!Number.isInteger(trustProxy) || trustProxy < 0 || trustProxy > 5) {
+    throw new Error(`Invalid TRUST_PROXY: ${env.TRUST_PROXY}`);
+  }
+
   return {
     nodeEnv,
     production,
@@ -114,5 +121,6 @@ export function loadConfig(env = process.env) {
     allowedOrigins,
     redisUrl,
     socketAdapter,
+    trustProxy,
   };
 }

@@ -203,3 +203,11 @@ test("a malformed DATABASE_URL is rejected, and the message never repeats it", a
   expect(error.message).toMatch(/DATABASE_URL/);
   expect(error.message).not.toContain("hunter2");
 });
+
+test("TRUST_PROXY defaults to 0, and accepts a small whole number", () => {
+  expect(loadConfig({}).trustProxy).toBe(0);
+  expect(loadConfig({ TRUST_PROXY: "1" }).trustProxy).toBe(1);
+  for (const TRUST_PROXY of ["-1", "abc", "1.5", "10"]) {
+    expect(() => loadConfig({ TRUST_PROXY })).toThrow(/TRUST_PROXY/);
+  }
+});

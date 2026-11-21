@@ -1,4 +1,4 @@
-import { test, expect, afterEach } from "vitest";
+import { test, expect, afterEach, vi } from "vitest";
 import request from "supertest";
 import {
   createTestApp,
@@ -170,4 +170,32 @@ test("form-encoded bodies are ignored, so a plain HTML form cannot log anyone in
   const res = await request(app).post("/api/login").type("form").send(ALICE);
   expect(res.status).toBe(400);
   expect(res.headers["set-cookie"]).toBeUndefined();
+});
+
+const wrongLogin = (app, forwardedFor) =>
+  request(app)
+    .post("/api/login")
+    .set("X-Forwarded-For", forwardedFor)
+    .send({ username: "nobody", password: "wrong-password-1" });
+
+test("behind a trusted proxy, each forwarded client has its own login limit", async () => {
+  const app = await make({
+    trustProxy: 1,
+    rateLimits: { login: { limit: 1, windowMs: 60_000 } },
+  });
+
+  expect((await wrongLogin(app, "203.0.113.1")).status).toBe(401);
+  expect((await wrongLogin(app, "203.0.113.1")).status).toBe(429);
+  expect((await wrongLogin(app, "203.0.113.2")).status).toBe(401); // another player, their own count
+});
+
+test("without a trusted proxy, a made-up X-Forwarded-For does not escape the limit", async () => {
+  const quiet = vi.spyOn(console, "error").mockImplementation(() => {}); // the limiter warns about the header
+  const app = await make({
+    rateLimits: { login: { limit: 1, windowMs: 60_000 } },
+  });
+
+  expect((await wrongLogin(app, "203.0.113.1")).status).toBe(401);
+  expect((await wrongLogin(app, "198.51.100.7")).status).toBe(429); // same real address, same count
+  quiet.mockRestore();
 });
