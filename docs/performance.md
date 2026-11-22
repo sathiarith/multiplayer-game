@@ -3,12 +3,12 @@
 Measured with `node scripts/explain.js` (from `server/`) on a scratch database
 with 20,000 players (40% of them with a score), in November 2026.
 
-| Query | Plan | Execution time | Notes |
-| --- | --- | --- | --- |
-| Log in (find a user by name) | Index Scan using `users_username_lower` | 0.02 ms | The query must use `lower(username)`, the indexed expression. |
-| List a player's characters | Index Scan using `idx_characters_user_id`, then Sort | 0.02 ms | The sort handles 1 to 3 rows. An index on `(user_id, id)` would remove it, but is not worth having. |
-| A character's inventory | Index Scan using `inventory_pkey`, joined to `items` | 0.04 ms | `character_id` is the key's first column. `items` has 3 rows, so a Seq Scan of it is the cheapest choice. |
-| Leaderboard (database fallback) | Index Scan using `idx_characters_leaderboard` | 0.026 ms (was 0.126 ms) | Migration 006. See below. |
+| Query                           | Plan                                                 | Execution time          | Notes                                                                                                     |
+| ------------------------------- | ---------------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------- |
+| Log in (find a user by name)    | Index Scan using `users_username_lower`              | 0.02 ms                 | The query must use `lower(username)`, the indexed expression.                                             |
+| List a player's characters      | Index Scan using `idx_characters_user_id`, then Sort | 0.02 ms                 | The sort handles 1 to 3 rows. An index on `(user_id, id)` would remove it, but is not worth having.       |
+| A character's inventory         | Index Scan using `inventory_pkey`, joined to `items` | 0.04 ms                 | `character_id` is the key's first column. `items` has 3 rows, so a Seq Scan of it is the cheapest choice. |
+| Leaderboard (database fallback) | Index Scan using `idx_characters_leaderboard`        | 0.026 ms (was 0.126 ms) | Migration 006. See below.                                                                                 |
 
 ## The leaderboard index
 
@@ -53,10 +53,10 @@ score yet.
 
 ## Test speed
 
-| Setup | `npm test` duration |
-| --- | --- |
-| Development Postgres (durable writes) | 32 s |
-| Test Postgres in memory, `fsync` off (port 5433) | 18.7 s |
+| Setup                                            | `npm test` duration |
+| ------------------------------------------------ | ------------------- |
+| Development Postgres (durable writes)            | 32 s                |
+| Test Postgres in memory, `fsync` off (port 5433) | 18.7 s              |
 
 Every test copies a database, and with durable writes Postgres waits for the
 disk on each copy and each commit. The test server keeps its data in memory
