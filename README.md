@@ -47,6 +47,33 @@ to download them and which files go in `client/public/sprites/`.
 3. In `client/`: `npm install` and `npm run dev`.
 4. Open http://127.0.0.1:5173.
 
+## Running everything in containers
+
+Docker Compose runs the whole game (Postgres, Redis, the server, and nginx
+serving the client) with one command.
+
+1. Copy `.env.example` to `.env`, and put a random value in each setting:
+
+       node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+
+2. Start everything, then open http://localhost:8080:
+
+       docker compose up --build -d
+       docker compose ps
+
+3. The first time, add the demo accounts (`demo_alice`, `demo_bob`, password
+   `demo-password-123`):
+
+       docker compose exec server node scripts/seed.js
+
+Useful commands: `docker compose logs server --tail 30`,
+`docker compose restart server`, `docker compose down` (keeps the data), and
+`docker compose down -v` (deletes it). The sprites are mounted from
+`client/public/sprites`; without them, placeholders are drawn.
+
+The stack runs in development mode over plain HTTP until HTTPS arrives in
+Sprint 9. It uses its own database, separate from the development containers.
+
 ## Database and Redis
 
 ### First time
