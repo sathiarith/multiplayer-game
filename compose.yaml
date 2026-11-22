@@ -1,0 +1,78 @@
+# The whole game in containers. Start everything with:
+#   docker compose up --build -d
+# Then open http://localhost:8080. Settings come from .env (see .env.example).
+#
+# Option A until Sprint 9: production images with development settings over
+# plain HTTP. Sprint 9 adds HTTPS and switches NODE_ENV to production.
+name: multiplayer-game
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: game
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: game
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U game -d game"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    # No ports: only containers on this network can reach the database.
+
+  redis:
+    image: redis:7
+    command: ["redis-server", "--appendonly", "yes"] # sessions survive a restart
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    image: game-server
+    init: true # forwards SIGTERM to Node, so a stop still saves every player
+    environment:
+      NODE_ENV: development
+      LOG_LEVEL: info
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
+      DATABASE_URL: postgres://game:${POSTGRES_PASSWORD}@postgres:5432/game
+      REDIS_URL: redis://redis:6379
+      ALLOWED_ORIGINS: http://localhost:8080,http://127.0.0.1:8080
+      TRUST_PROXY: "1" # exactly one proxy in front: the web container
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    # One server only: it owns the game world (decision record 0003).
+    # Its health check comes from the image: GET /health.
+
+  web:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    image: game-web
+    ports:
+      - "127.0.0.1:8080:8080" # the only way in from your computer
+    volumes:
+      # The licensed sprites are mounted from your disk, read-only, never built in.
+      - ./client/public/sprites:/usr/share/nginx/html/sprites:ro
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  redis-data:
