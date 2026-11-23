@@ -4,7 +4,10 @@ node_modules/
 !.env.example
 dist/
 *.db
-server/data/
+# The old SQLite database from before Sprint 8. The rest of server/data
+# (loot.json, monsters.json) is game data and must be committed.
+server/data/*.db
+server/data/*.db-*
 coverage/
 # Third-party art: license forbids redistribution, see CREDITS.md
 client/public/sprites/**/*.png

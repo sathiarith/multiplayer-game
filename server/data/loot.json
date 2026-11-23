@@ -1,0 +1,7 @@
+{
+  "spawns": [
+    { "item": "gold_coin", "col": 3, "row": 1 },
+    { "item": "meat", "col": 6, "row": 1 },
+    { "item": "wood", "col": 10, "row": 1 }
+  ]
+}

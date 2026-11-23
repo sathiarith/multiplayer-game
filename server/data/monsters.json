@@ -1,0 +1,17 @@
+{
+  "types": {
+    "goblin": {
+      "name": "Goblin",
+      "maxHp": 40,
+      "damage": 6,
+      "xp": 25,
+      "attackRange": 44,
+      "cooldownMs": 1500,
+      "respawnSeconds": 20
+    }
+  },
+  "spawns": [
+    { "type": "goblin", "col": 13, "row": 1 },
+    { "type": "goblin", "col": 16, "row": 1 }
+  ]
+}
