@@ -1,0 +1,129 @@
+# Continuous integration: every pull request to main, and every push to main,
+# must pass all three jobs. They run in parallel.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch: # a "Run workflow" button on the Actions page
+
+# A new push to a pull request cancels the run still going for its old commit.
+# Runs on main are never cancelled: every merge is checked.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# CI only reads the repository; it never changes it.
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Lint, unit tests and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
+            client/package-lock.json
+
+      - uses: ./.github/actions/test-databases
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm ci --prefix server
+          npm ci --prefix client
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit and integration tests, with coverage
+        run: npm run coverage
+
+      - name: Build the client
+        run: npm run build --prefix client
+
+  e2e:
+    name: End-to-end tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            client/package-lock.json
+            e2e/package-lock.json
+
+      - uses: ./.github/actions/test-databases
+
+      - name: Install dependencies
+        run: |
+          npm ci --prefix server
+          npm ci --prefix client
+          npm ci --prefix e2e
+
+      - name: Install the browser
+        working-directory: e2e
+        run: npx playwright install --with-deps chromium
+
+      - name: End-to-end tests
+        run: npm run e2e
+
+      - name: Keep the report and traces of a failed run
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 7
+
+  images:
+    name: Images build and start
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      # Throwaway values: this stack lives only for the length of the job.
+      - name: Make the settings Compose requires
+        run: |
+          echo "POSTGRES_PASSWORD=$(openssl rand -hex 32)" >> .env
+          echo "SESSION_SECRET=$(openssl rand -hex 32)" >> .env
+
+      - name: Build and start everything, waiting until every service is healthy
+        run: docker compose up --build --detach --wait --wait-timeout 180
+
+      - name: Requests through nginx reach the client, the API and the database
+        run: |
+          curl --fail --silent --show-error http://127.0.0.1:8080/ | grep -qi "<!doctype html>"
+          status=$(curl --silent --output /dev/null --write-out "%{http_code}" http://127.0.0.1:8080/api/me)
+          test "$status" = 401
+          docker compose exec -T server node scripts/seed.js
+          curl --fail --silent --show-error -X POST http://127.0.0.1:8080/api/login \
+            -H "Content-Type: application/json" \
+            -d '{"username":"demo_alice","password":"demo-password-123"}'
+
+      - name: Show every service's log if something failed
+        if: failure()
+        run: docker compose logs
+
+      - name: Stop and remove everything
+        if: always()
+        run: docker compose down -v
