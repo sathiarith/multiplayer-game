@@ -8,7 +8,7 @@ name: multiplayer-game
 
 services:
   postgres:
-    image: postgres:18
+    image: postgres:18@sha256:f5cbc081c25690710f3fc6f4c61a7565382bae01ca0d0f2028a53d7926b85a20
     environment:
       POSTGRES_USER: game
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
@@ -24,7 +24,7 @@ services:
     # No ports: only containers on this network can reach the database.
 
   redis:
-    image: redis:7
+    image: redis:7@sha256:2e3eb11462c4e3759e6972678dd051d150ff54b1e60714b3c33b701260172a90
     command: ["redis-server", "--appendonly", "yes"] # sessions survive a restart
     volumes:
       - redis-data:/data

@@ -1,0 +1,59 @@
+# Publishes both images to GitHub's container registry, but only for commits on
+# main whose CI run passed. Each image is tagged with its commit (sha-<12 chars>,
+# never changes: what deploys use) and with "main" (the newest; never deployed).
+name: Images
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write # push to ghcr.io; nothing else
+
+jobs:
+  publish:
+    name: Publish ${{ matrix.image }}
+    # Only after a successful CI run for a push to main: never for a red run,
+    # and never for a pull request.
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        include:
+          - image: game-server
+            dockerfile: server/Dockerfile
+          - image: game-web
+            dockerfile: client/Dockerfile
+    env:
+      SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.SHA }} # exactly the commit CI tested
+
+      - name: Log in to ghcr.io
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}" # registry names must be lowercase
+          name="ghcr.io/$owner/${{ matrix.image }}"
+          echo "NAME=$name" >> "$GITHUB_ENV"
+          docker build -f "${{ matrix.dockerfile }}" \
+            -t "$name:sha-${SHA::12}" \
+            -t "$name:main" \
+            --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+            --label "org.opencontainers.image.revision=$SHA" \
+            .
+
+      - name: Push
+        run: docker push --all-tags "$NAME"
+
+      - name: Summary
+        run: echo "Published \`$NAME:sha-${SHA::12}\`" >> "$GITHUB_STEP_SUMMARY"
