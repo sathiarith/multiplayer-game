@@ -1,4 +1,5 @@
 # Multiplayer Game
+[![CI](https://github.com/sathiarith/multiplayer-game/actions/workflows/ci.yml/badge.svg)](https://github.com/sathiarith/multiplayer-game/actions/workflows/ci.yml)
 
 A browser-based multiplayer game built to learn the full web stack:
 JavaScript, HTML/CSS, React, Node/Express, SQL, WebSockets, Redis, Docker, and CI/CD.
@@ -125,3 +126,18 @@ and Redis database 15, and drives real browsers with Playwright. It needs the te
 Postgres and Redis containers to be running. The first time, install the browser with
 `cd e2e`, `npm install`, and `npx playwright install chromium`. After a failure, open
 the report with `npm --prefix e2e run report` and look at the trace.
+
+## Continuous integration
+
+Every pull request to `main` runs three checks on GitHub Actions
+(`.github/workflows/ci.yml`), and must pass all of them before it can be merged:
+
+- **Lint, unit tests and build:** ESLint, every unit and integration test with
+  the coverage thresholds, and the client build.
+- **End-to-end tests:** the Playwright suite in Chromium. A failed run keeps its
+  report and traces as a downloadable artifact.
+- **Images build and start:** both images are built, the whole Compose stack
+  starts and must become healthy, and a login goes through nginx.
+
+The test databases are started the same way as locally
+(`.github/actions/test-databases`).
