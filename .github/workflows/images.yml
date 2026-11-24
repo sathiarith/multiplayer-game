@@ -24,6 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
+      fail-fast: false # one image failing must not cancel the other
       matrix:
         include:
           - image: game-server
