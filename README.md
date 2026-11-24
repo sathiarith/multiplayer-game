@@ -1,4 +1,5 @@
 # Multiplayer Game
+
 [![CI](https://github.com/sathiarith/multiplayer-game/actions/workflows/ci.yml/badge.svg)](https://github.com/sathiarith/multiplayer-game/actions/workflows/ci.yml)
 
 A browser-based multiplayer game built to learn the full web stack:
@@ -107,12 +108,12 @@ development only; a real deployment sets `DATABASE_URL` from a secret store.
 
 ### Useful commands (run in `server/`)
 
-| Command | What it does |
-| --- | --- |
-| `npm run db:status` | Lists every migration, applied or pending |
-| `npm run db:migrate` | Applies pending migrations |
-| `npm run db:rollback` | Undoes the newest migration |
-| `npm run db:seed` | Adds the demo accounts `demo_alice` and `demo_bob` (password `demo-password-123`); safe to run again |
+| Command               | What it does                                                                                         |
+| --------------------- | ---------------------------------------------------------------------------------------------------- |
+| `npm run db:status`   | Lists every migration, applied or pending                                                            |
+| `npm run db:migrate`  | Applies pending migrations                                                                           |
+| `npm run db:rollback` | Undoes the newest migration                                                                          |
+| `npm run db:seed`     | Adds the demo accounts `demo_alice` and `demo_bob` (password `demo-password-123`); safe to run again |
 
 To look inside the database: `docker exec -it game-postgres psql -U game -d game`.
 The schema is drawn in [docs/erd.md](docs/erd.md), and query plans are recorded in
@@ -141,3 +142,17 @@ Every pull request to `main` runs three checks on GitHub Actions
 
 The test databases are started the same way as locally
 (`.github/actions/test-databases`).
+
+## Published images
+
+When a commit on `main` passes CI, both images are published to GitHub's
+container registry (`.github/workflows/images.yml`):
+
+- `ghcr.io/sathiarith/game-server`
+- `ghcr.io/sathiarith/game-web`
+
+Each is tagged `sha-<first 12 characters of the commit>`, which never changes
+and is what deploys use, and `main`, which follows the newest published image.
+`docker inspect` shows the full commit in the `org.opencontainers.image.revision`
+label. Base images are pinned by digest; Dependabot proposes updates weekly
+(`.github/dependabot.yml`), and CI checks each proposal.
