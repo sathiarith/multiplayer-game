@@ -1157,28 +1157,31 @@ test("offers that cannot work are refused to the sender, without penalty", async
   const a = await rt.open(asPlayer(alice));
   await rt.open(asPlayer(bob));
   const results = hear(a.socket, "trade_result");
-  const offer = (to, code, quantity) =>
+
+  // Each offer waits for its answer before the next is sent. Sent together,
+  // the answers could arrive in any order: each check waits on the database
+  // for a different length of time.
+  const refusalOf = async (to, code, quantity) => {
+    const before = results.length;
     a.socket.emit("trade_offer", { to, give: [{ code, quantity }], want: [] });
+    await vi.waitFor(() => expect(results).toHaveLength(before + 1));
+    return results.at(-1).reason;
+  };
 
-  offer(alice.characterId, "gold_coin", 1); // to yourself
-  offer(bob.characterId, "dragon_egg", 1); // no such item
-  offer(carol.characterId, "gold_coin", 1); // not playing
-  offer(bob.characterId, "gold_coin", 5); // more than she has
-
-  await vi.waitFor(() =>
-    expect(results.map((r) => r.reason)).toEqual([
-      "invalid",
-      "invalid",
-      "not_here",
-      "missing_items",
-    ]),
-  );
+  expect(await refusalOf(alice.characterId, "gold_coin", 1)).toBe("invalid"); // to yourself
+  expect(await refusalOf(bob.characterId, "dragon_egg", 1)).toBe("invalid"); // no such item
+  expect(await refusalOf(carol.characterId, "gold_coin", 1)).toBe("not_here"); // not playing
+  expect(await refusalOf(bob.characterId, "gold_coin", 5)).toBe("missing_items"); // more than she has
   expect(results.every((r) => r.id === null && r.ok === false)).toBe(true);
 
-  for (let i = 0; i < 4; i++) offer(bob.characterId, "gold_coin", 1);
-  await vi.waitFor(() =>
-    expect(results.at(-1)?.reason).toBe("too_many_offers"),
-  );
+  for (let i = 0; i < 4; i++) {
+    a.socket.emit("trade_offer", {
+      to: bob.characterId,
+      give: [{ code: "gold_coin", quantity: 1 }],
+      want: [],
+    });
+  }
+  await vi.waitFor(() => expect(results.at(-1)?.reason).toBe("too_many_offers"));
   expect(a.socket.connected).toBe(true);
 });
 
