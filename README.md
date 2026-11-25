@@ -156,3 +156,24 @@ and is what deploys use, and `main`, which follows the newest published image.
 `docker inspect` shows the full commit in the `org.opencontainers.image.revision`
 label. Base images are pinned by digest; Dependabot proposes updates weekly
 (`.github/dependabot.yml`), and CI checks each proposal.
+
+## Production
+
+The game runs at https://play.sathchau.dev, on an Amazon Lightsail server
+(Ubuntu 24.04, Docker), from the published images.
+
+- `deploy/compose.yaml` runs Postgres, Redis, the server, nginx, and Caddy in
+  front. Caddy gets and renews the HTTPS certificate, redirects HTTP to HTTPS,
+  and adds the security headers (`deploy/Caddyfile`).
+- The server runs with `NODE_ENV=production` and `TRUST_PROXY=2` (Caddy, then
+  nginx).
+- The version deployed is set by `IMAGE_TAG` in the server's `.env`, which also
+  holds the secrets. That file exists only on the server.
+- The licensed sprites are copied to the server and mounted read-only.
+
+To deploy a version by hand, on the server:
+
+    cd ~/game
+    # set IMAGE_TAG=sha-<12 characters> in .env, then:
+    docker compose pull
+    docker compose up -d --wait
