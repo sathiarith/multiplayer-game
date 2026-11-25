@@ -1,0 +1,69 @@
+# Deploys to production after Images publishes a commit from main, or by hand
+# with any published tag (which is how to roll back). The server checks the
+# new version's health, and goes back to the previous one if it fails.
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [Images]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version to deploy: sha- and 12 characters"
+        required: true
+
+permissions:
+  contents: read
+
+# One deploy at a time, in order; never cancel one halfway.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to production
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: https://play.sathchau.dev
+    steps:
+      - name: Choose the version
+        id: version
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if [ -n "$INPUT_TAG" ]; then tag="$INPUT_TAG"; else tag="sha-${HEAD_SHA::12}"; fi
+          if ! [[ "$tag" =~ ^sha-[0-9a-f]{12}$ ]]; then
+            echo "::error::Not a version tag: $tag"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Set up the deploy key and the server's fingerprint
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Deploy ${{ steps.version.outputs.tag }}
+        env:
+          HOST: ${{ vars.DEPLOY_HOST }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes -o BatchMode=yes \
+            "ubuntu@$HOST" "deploy $TAG"
+
+      - name: Summary
+        run: echo "Deployed \`${{ steps.version.outputs.tag }}\` to https://play.sathchau.dev" >> "$GITHUB_STEP_SUMMARY"
