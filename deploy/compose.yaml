@@ -1,0 +1,82 @@
+# Production: the game at https://<DOMAIN>, run from published images.
+# Nothing is built here. Settings come from .env next to this file, which
+# exists only on the server. Start with: docker compose up -d --wait
+name: game
+
+services:
+  postgres:
+    image: postgres:18@sha256:f5cbc081c25690710f3fc6f4c61a7565382bae01ca0d0f2028a53d7926b85a20
+    environment:
+      POSTGRES_USER: game
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: game
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U game -d game"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7@sha256:2e3eb11462c4e3759e6972678dd051d150ff54b1e60714b3c33b701260172a90
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  server:
+    image: ghcr.io/sathiarith/game-server:${IMAGE_TAG:?Set IMAGE_TAG in .env}
+    init: true
+    environment:
+      NODE_ENV: production
+      LOG_LEVEL: info
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
+      DATABASE_URL: postgres://game:${POSTGRES_PASSWORD}@postgres:5432/game
+      REDIS_URL: redis://redis:6379
+      ALLOWED_ORIGINS: https://${DOMAIN:?Set DOMAIN in .env}
+      TRUST_PROXY: "2" # two proxies in front: Caddy, then nginx
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    image: ghcr.io/sathiarith/game-web:${IMAGE_TAG}
+    volumes:
+      - ./sprites:/usr/share/nginx/html/sprites:ro # licensed art, never in an image
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
+    ports:
+      - "80:80" # certificate checks, and the redirect to HTTPS
+      - "443:443" # the game
+      - "443:443/udp" # HTTP/3
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data # certificates: keep, or Let's Encrypt limits apply
+      - caddy-config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  redis-data:
+  caddy-data:
+  caddy-config:
