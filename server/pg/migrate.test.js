@@ -222,4 +222,14 @@ describe.skipIf(!available)("PostgreSQL migrations", () => {
     );
     expect(gold.quantity).toBe(3);
   });
+
+  test("a database migrated by a newer version still starts with this one, for rollbacks", async () => {
+    await migrateUp(client);
+    // A newer release added a migration this code has never heard of.
+    await client.query(
+      "INSERT INTO schema_migrations (version, name) VALUES (999, 'from_a_newer_release')",
+    );
+
+    await expect(migrateUp(client)).resolves.toEqual([]); // nothing to apply, and no error
+  });
 });
