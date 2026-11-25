@@ -177,3 +177,21 @@ To deploy a version by hand, on the server:
     # set IMAGE_TAG=sha-<12 characters> in .env, then:
     docker compose pull
     docker compose up -d --wait
+
+## Backups
+
+The production database is backed up every night at 03:30 UTC by
+`deploy/backup.sh`, run from cron on the server (`/etc/cron.d/game-backup`):
+
+- `pg_dump` in custom format (compressed; `pg_restore` can restore all or part)
+- copied to a private Lightsail bucket in Ohio, with versioning on, using an
+  access key limited to that bucket (`aws` profile `game-backup`)
+- the newest 7 kept on the server in `~/backups`; the bucket keeps all of them
+- each run adds one line to `~/backups/backup.log`
+
+Redis is not backed up: it holds only sessions, rate-limit counters and the
+leaderboard index, which is rebuilt from the database.
+
+A restore was tested on 2026-11-25: the newest backup was downloaded from the
+bucket, restored into a throwaway Postgres container, and its row counts
+matched production.
