@@ -5,12 +5,43 @@
 A browser-based multiplayer game built to learn the full web stack:
 JavaScript, HTML/CSS, React, Node/Express, SQL, WebSockets, Redis, Docker, and CI/CD.
 
+## About this project
+
+**Play it: https://play.sathchau.dev** (register an account, then create a character)
+
+A real-time multiplayer game built over ten sprints, from an empty repository
+to a live service: players move with client-side prediction against a
+server-authoritative world, chat with players nearby, pick up items, trade,
+fight goblins and climb a leaderboard.
+
+Behind it:
+
+- **Tested on every change:** 600+ unit and integration tests and 19 browser
+  end-to-end tests run on GitHub Actions before anything can be merged.
+- **Deployed automatically:** each merge to `main` is built into images,
+  published by commit, and deployed with a health check and automatic
+  rollback, about 3 minutes from merge to live.
+- **Operated like a real service:** HTTPS with security headers, nightly
+  off-site backups with a tested restore, uptime and backup monitoring, and
+  a runbook.
+
+Read more:
+
+- [Project retrospective](docs/retros/project.md): how it was built, the bugs
+  found before release, and what I'd do differently
+- [Decision records](docs/decisions/): why PostgreSQL, why one process owns
+  the world, how deploys and rollbacks work
+- [Runbook](docs/runbook.md): how it's operated, and what to do when
+  something breaks
+- [Sprint retros](docs/retros/): one per sprint
+
 ## Stack
 
 - Front end: vanilla JS and Canvas, then React (Vite)
 - Back end: Node.js, Express, Socket.IO
 - Data: PostgreSQL (SQLite until Sprint 8); Redis for sessions, rate limits and the leaderboard
 - Tooling: ESLint, Prettier, Vitest, Playwright, GitHub Actions, Docker
+- Hosting: Docker Compose on Amazon Lightsail, behind Caddy (automatic HTTPS)
 
 ## Getting started
 
@@ -30,7 +61,12 @@ the development database.
 - `client/` browser app
 - `server/` API and game server
 - `shared/` game logic used by both
-- `docs/` decisions, API spec, database diagram, performance notes, and runbooks
+- `e2e/` browser end-to-end tests (Playwright)
+- `deploy/` the production Compose file, Caddy's configuration, and the
+  deploy and backup scripts
+- `.github/` CI, image publishing, automatic deploys, and Dependabot
+- `docs/` decisions, API spec, database diagram, performance notes, the
+  runbook, and retros
 
 ## Art assets
 
@@ -73,8 +109,9 @@ Useful commands: `docker compose logs server --tail 30`,
 `docker compose down -v` (deletes it). The sprites are mounted from
 `client/public/sprites`; without them, placeholders are drawn.
 
-The stack runs in development mode over plain HTTP until HTTPS arrives in
-Sprint 9. It uses its own database, separate from the development containers.
+This local stack runs in development mode over plain HTTP, with its own
+database, separate from the development containers. Production (below) runs
+the same images over HTTPS, in production mode.
 
 ## Database and Redis
 
@@ -171,12 +208,25 @@ The game runs at https://play.sathchau.dev, on an Amazon Lightsail server
   holds the secrets. That file exists only on the server.
 - The licensed sprites are copied to the server and mounted read-only.
 
-To deploy a version by hand, on the server:
+Every merge to `main` deploys itself: after CI passes and the images are
+published, the Deploy workflow (`.github/workflows/deploy.yml`) asks the
+server to run `deploy/deploy.sh` with the new tag. It pulls the images, backs
+up the database, restarts the server and nginx, checks health from outside,
+and goes back to the previous version if the check fails. From merge to live
+takes about 3 minutes.
+
+To deploy or roll back by hand (decision record 0006, and the
+[runbook](docs/runbook.md)):
 
     cd ~/game
-    # set IMAGE_TAG=sha-<12 characters> in .env, then:
-    docker compose pull
-    docker compose up -d --wait
+    ./deploy.sh sha-<12 characters>    # a specific version
+    ./deploy.sh previous               # the version before the current one
+
+Or on GitHub: Actions, Deploy, "Run workflow", with the tag.
+
+The game is watched from outside: `/healthz` and the home page are checked
+every 5 minutes, the nightly backup sends a heartbeat, and the server has
+alarms on CPU and health. Each sends an email when something breaks.
 
 ## Backups
 
@@ -188,6 +238,8 @@ The production database is backed up every night at 03:30 UTC by
   access key limited to that bucket (`aws` profile `game-backup`)
 - the newest 7 kept on the server in `~/backups`; the bucket keeps all of them
 - each run adds one line to `~/backups/backup.log`
+- each successful run pings a heartbeat monitor, which emails me if a backup
+  fails or doesn't run at all
 
 Redis is not backed up: it holds only sessions, rate-limit counters and the
 leaderboard index, which is rebuilt from the database.
