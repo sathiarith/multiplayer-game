@@ -53,8 +53,8 @@ automatically and safely, and find out about problems before players do
   from the bucket matched production, a rollback took about 12 seconds, a
   version that doesn't exist changed nothing, the deploy key could only
   request a deploy, and each outside alert arrived and cleared.
-- The first scheduled backup ran unattended at 03:30 UTC and pinged its
-  heartbeat. ⚠ KEEP ONLY IF backup.log CONFIRMS IT, AND DELETE THIS NOTE
+- The first scheduled backup ran unattended at 03:30 UTC
+  (game-20261126-033001.dump, 12K) and pinged its heartbeat.
 - I traced problems before fixing them: ssh -v showed my key was accepted
   (the first connection had timed out), and /healthz answered before its
   deploy had finished.
