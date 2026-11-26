@@ -10,6 +10,15 @@ BACKUP_DIR="$HOME/backups"
 STAMP="$(date -u +%Y%m%d-%H%M%S)"
 NAME="game-$STAMP.dump"
 BUCKET="$(grep -E '^BACKUP_BUCKET=' .env | cut -d= -f2)"
+HEARTBEAT="$(grep -E '^BACKUP_HEARTBEAT_URL=' .env | cut -d= -f2- || true)"
+
+# Tell the monitoring service how this run ended: a ping on success, /fail on
+# any error. Without a URL, do nothing (for example on a fresh server).
+heartbeat() {
+  [ -n "$HEARTBEAT" ] || return 0
+  curl -fsS -m 10 --retry 3 -o /dev/null "$HEARTBEAT$1" || true
+}
+trap 'heartbeat /fail' ERR
 
 if [ -z "$BUCKET" ]; then
   echo "BACKUP_BUCKET is missing from .env" >&2
@@ -33,3 +42,4 @@ aws --profile game-backup s3 cp "$BACKUP_DIR/$NAME" "s3://$BUCKET/db/$NAME" --on
 ls -1t "$BACKUP_DIR"/game-*.dump | tail -n +8 | xargs -r rm --
 
 echo "$(date -u +%FT%TZ) backup ok: $NAME ($(du -h "$BACKUP_DIR/$NAME" | cut -f1)) to s3://$BUCKET/db/"
+heartbeat ""
